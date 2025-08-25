@@ -1,0 +1,192 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,amsthm,amsfonts}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{booktabs}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+\title{Extreme Learning Machine: Theory and Applications}
+\author{Summary of Huang, Zhu, and Siew, Neurocomputing 2006}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+This paper addresses the primary bottleneck in feedforward neural networks: slow learning speed. The authors identify two key reasons for this limitation: (1) widespread use of slow gradient-based learning algorithms and (2) iterative tuning of all network parameters. To overcome these issues, they propose a novel learning algorithm called Extreme Learning Machine (ELM) for single-hidden layer feedforward neural networks (SLFNs) which significantly accelerates learning while maintaining or improving generalization performance.
+
+\section{Theoretical Foundation}
+
+The paper provides rigorous mathematical proofs supporting two key theoretical findings:
+
+\subsection{Random Assignment of Input Weights and Biases}
+
+\textbf{Theorem 2.1}: Given a standard SLFN with $N$ hidden nodes and an activation function $g$ that is infinitely differentiable in any interval, for $N$ arbitrary distinct samples $(x_i, t_i)$, where $x_i \in \mathbb{R}^n$ and $t_i \in \mathbb{R}^m$, with input weights $w_i$ and biases $b_i$ randomly chosen from any intervals according to any continuous probability distribution, then with probability one, the hidden layer output matrix $H$ is invertible and $\|Hb - T\| = 0$.
+
+This theorem establishes that, contrary to conventional understanding, input weights and hidden layer biases do not need to be tuned if the activation function is infinitely differentiable. Such functions include sigmoidal functions, radial basis functions, sine, cosine, exponential, and many other nonregular functions.
+
+\subsection{Approximation Capability}
+
+\textbf{Theorem 2.2}: Given any small positive value $\epsilon > 0$ and an infinitely differentiable activation function $g$, there exists $\tilde{N} \leq N$ such that for $N$ arbitrary distinct samples, with randomly assigned input weights and biases, with probability one, $\|H_{N \times \tilde{N}}b_{\tilde{N} \times m} - T_{N \times m}\| < \epsilon$.
+
+This theorem confirms that SLFNs with randomly assigned input weights and hidden layer biases can approximate any continuous function with the required accuracy, and the upper bound of the required number of hidden nodes is the number of distinct training samples.
+
+\section{ELM Algorithm}
+
+\subsection{Mathematical Formulation}
+
+For $N$ arbitrary distinct samples $(x_i, t_i)$, where $x_i = [x_{i1}, x_{i2}, ..., x_{in}]^T \in \mathbb{R}^n$ and $t_i = [t_{i1}, t_{i2}, ..., t_{im}]^T \in \mathbb{R}^m$, standard SLFNs with $\tilde{N}$ hidden nodes and activation function $g(x)$ can be mathematically modeled as:
+
+\begin{align}
+\sum_{i=1}^{\tilde{N}} \beta_i g(w_i \cdot x_j + b_i) = o_j, \quad j = 1, \ldots, N
+\end{align}
+
+where:
+\begin{itemize}
+    \item $w_i = [w_{i1}, w_{i2}, ..., w_{in}]^T$ is the weight vector connecting the $i$th hidden node and input nodes
+    \item $\beta_i = [\beta_{i1}, \beta_{i2}, ..., \beta_{im}]^T$ is the weight vector connecting the $i$th hidden node and output nodes
+    \item $b_i$ is the threshold of the $i$th hidden node
+    \item The output nodes are chosen to be linear
+\end{itemize}
+
+These $N$ equations can be written compactly as:
+\begin{align}
+H\beta = T
+\end{align}
+
+where $H$ is the hidden layer output matrix:
+\begin{align}
+H(w_1,...,w_{\tilde{N}},b_1,...,b_{\tilde{N}},x_1,...,x_N) = 
+\begin{bmatrix}
+g(w_1 \cdot x_1 + b_1) & \cdots & g(w_{\tilde{N}} \cdot x_1 + b_{\tilde{N}}) \\
+\vdots & \ddots & \vdots \\
+g(w_1 \cdot x_N + b_1) & \cdots & g(w_{\tilde{N}} \cdot x_N + b_{\tilde{N}})
+\end{bmatrix}_{N \times \tilde{N}}
+\end{align}
+
+\subsection{Minimum Norm Least-Squares Solution}
+
+The ELM approach recognizes that, for fixed input weights $w_i$ and hidden layer biases $b_i$, training an SLFN is equivalent to finding a least-squares solution $\hat{\beta}$ of the linear system $H\beta = T$:
+
+\begin{align}
+\|H(w_1,...,w_{\tilde{N}},b_1,...,b_{\tilde{N}})\hat{\beta} - T\| = \min_{\beta}\|H(w_1,...,w_{\tilde{N}},b_1,...,b_{\tilde{N}})\beta - T\|
+\end{align}
+
+According to the theory of generalized inverse, the smallest norm least-squares solution of the above linear system is:
+\begin{align}
+\hat{\beta} = H^{\dagger}T
+\end{align}
+where $H^{\dagger}$ is the Moore-Penrose generalized inverse of matrix $H$.
+
+This solution has two important properties:
+\begin{enumerate}
+    \item It achieves the minimum training error: $\|H\hat{\beta} - T\| = \min_{\beta}\|H\beta - T\|$
+    \item It has the smallest norm among all least-squares solutions: $\|\hat{\beta}\| = \|H^{\dagger}T\| \leq \|\beta\|$, for all $\beta$ that satisfy $\|H\beta - T\| \leq \|Hz - T\|$ for any $z$
+\end{enumerate}
+
+According to Bartlett's theory on the generalization of feedforward neural networks, for networks reaching smaller training error, the smaller the norm of weights, the better generalization performance the networks tend to have. Therefore, the ELM solution tends to have good generalization performance.
+
+\subsection{The ELM Algorithm}
+
+\begin{algorithm}
+\caption{Extreme Learning Machine (ELM)}
+\begin{algorithmic}[1]
+\State \textbf{Given:} A training set $\mathcal{N} = \{(x_i, t_i) | x_i \in \mathbb{R}^n, t_i \in \mathbb{R}^m, i = 1, \ldots, N\}$, activation function $g(x)$, and hidden node number $\tilde{N}$
+\State Randomly assign input weights $w_i$ and biases $b_i$, $i = 1, \ldots, \tilde{N}$
+\State Calculate the hidden layer output matrix $H$ 
+\State Calculate the output weights $\beta$: $\beta = H^{\dagger}T$, where $T = [t_1, \ldots, t_N]^T$
+\end{algorithmic}
+\end{algorithm}
+
+Unlike traditional learning algorithms, ELM does not need to iteratively adjust all parameters of the network. By randomly assigning the input weights and hidden layer biases and analytically determining the output weights, ELM avoids the time-consuming gradient-based learning process.
+
+\section{Numerical Examples and Results}
+
+The paper evaluates ELM against Back-Propagation (BP) and Support Vector Machines (SVM) on various benchmark problems.
+
+\subsection{Synthetic Function Approximation: SinC Function}
+
+A test was conducted to approximate the SinC function $y(x) = \sin(x)/x$ (or 1 when $x = 0$) with uniform noise in the range $[-0.2, 0.2]$ added to training samples. With 20 hidden nodes:
+\begin{itemize}
+    \item ELM achieved a testing RMSE of 0.0097 in just 0.125 seconds
+    \item BP required 21.26 seconds to reach a testing RMSE of 0.0159
+    \item SVR took 1273.4 seconds with a testing RMSE of 0.0130
+\end{itemize}
+
+This demonstrated that ELM learns approximately 170 times faster than BP and more than 10,000 times faster than SVR while achieving better generalization performance.
+
+\subsection{Real-World Regression Problems}
+
+ELM was tested on 13 real-world benchmark datasets covering various fields. Results showed that:
+\begin{itemize}
+    \item ELM and SVR achieved similar generalization performance, slightly better than BP in many cases
+    \item ELM required more hidden nodes than BP but fewer than the support vectors needed by SVR
+    \item ELM consistently provided the fastest learning speed, up to hundreds of times faster than BP
+    \item BP had the shortest testing time due to its more compact network architecture
+\end{itemize}
+
+An important observation was that the generalization performance of ELM remained stable across a wide range of hidden node numbers, although performance degraded with either too few or too many nodes.
+
+\subsection{Classification Problems}
+
+\subsubsection{Medical Diagnosis: Diabetes Classification}
+
+On the Pima Indians Diabetes Database:
+\begin{itemize}
+    \item ELM achieved 77.57\% testing accuracy with 20 nodes
+    \item BP achieved 74.73\% testing accuracy with 20 nodes
+    \item SVM achieved 77.31\% testing accuracy with 317.16 support vectors
+\end{itemize}
+
+ELM ran approximately 300 times faster than BP and 15 times faster than SVM while outperforming both in accuracy.
+
+\subsubsection{Medium-Size Classification Applications}
+
+Tests on satellite image classification, image segmentation, shuttle landing control, and the Banana dataset showed that ELM ran up to 4,200 times faster than BP while maintaining competitive accuracy.
+
+\subsection{Large Complex Applications: Forest Cover-Type Prediction}
+
+For a very large classification problem with 100,000 training samples and 481,012 testing samples:
+\begin{itemize}
+    \item ELM achieved 90.21\% testing accuracy in just 1.6 minutes of training
+    \item SVM achieved 89.90\% testing accuracy but required nearly 12 hours of training
+    \item Conventional SLFNs with BP could only reach 81.85\% testing accuracy
+\end{itemize}
+
+The training speed of ELM was 430 times faster than SVM, and its response speed for testing was 480 times faster. This demonstrates ELM's suitability for real-time applications requiring fast prediction and response capabilities.
+
+\section{Implications and Advantages}
+
+The ELM approach offers several significant advantages over traditional gradient-based learning algorithms:
+
+\subsection{Extraordinary Learning Speed}
+
+ELM breaks through what appears to be a virtual speed barrier that most classical learning algorithms cannot overcome. In the experiments, ELM completed learning in seconds or less for many applications, while classical algorithms often required minutes, hours, or even days.
+
+\subsection{Superior Generalization Performance}
+
+In most cases, ELM demonstrated better generalization performance than gradient-based learning algorithms like BP. This is consistent with Bartlett's theory that smaller norm of weights tends to yield better generalization performance.
+
+\subsection{Avoidance of Common Learning Issues}
+
+Traditional gradient-based learning algorithms face issues such as:
+\begin{itemize}
+    \item Local minima
+    \item Improper learning rate selection
+    \item Overfitting
+\end{itemize}
+
+ELM avoids these issues by reaching solutions straightforwardly without requiring techniques like weight decay or early stopping that are often needed in classical algorithms.
+
+\subsection{Applicability to Non-Differentiable Activation Functions}
+
+Unlike traditional learning algorithms that only work with differentiable activation functions, ELM can train SLFNs with many non-differentiable activation functions as well.
+
+\subsection{Real-Time Application Potential}
+
+ELM's fast learning and response times make it particularly suitable for applications requiring real-time prediction capabilities. As demonstrated in the forest cover-type prediction case, ELM can respond to new observations much faster than SVMs after training and deployment.
+
+\end{document} 

@@ -1,0 +1,247 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{assumption}{Assumption}
+\newtheorem{definition}{Definition}
+\newtheorem{problem}{Problem}
+
+\title{A randomized neural network based Petrov--Galerkin method for approximating the solution of fractional order boundary value problems}
+\author{John P. Roop}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+Fractional differential equations have gained significant attention in various scientific fields due to their ability to model complex physical phenomena that classical integer-order models cannot adequately describe. Traditional numerical methods for solving these equations, such as finite differences and finite elements, face computational challenges due to the non-local nature of fractional operators.
+
+While Physics Informed Neural Networks (PINNs) have been applied to solve partial differential equations, they face a computational bottleneck:
+\begin{itemize}
+    \item Training requires millions of samples
+    \item Long training times, even on GPU architecture
+    \item Limited accuracy (at best 1\% relative error for complex problems)
+\end{itemize}
+
+This paper introduces an alternative approach using Randomized Neural Networks (RNNs) in a Petrov-Galerkin framework to solve fractional order boundary value problems. Unlike traditional neural networks that require training all parameters through gradient descent, RNNs randomly assign weights to most parameters and only train the output layer, significantly reducing computational costs.
+
+\section{Methodology}
+
+\subsection{Randomized Neural Networks Basis}
+
+The fundamental component of the methodology is the RNN structure with random internal coefficients:
+
+\begin{definition}[RNN Function]
+Let $W \in \mathbb{R}^N$, $\tilde{V} \in \mathbb{R}^{N \times N}$, $\tilde{U} \in \mathbb{R}^n$, and $\sigma$ be a sigmoid function. Then the RNN function on the interval $(a,b)$ is defined as:
+\begin{equation}
+y(x) = \sum_{j=1}^{N} W_j \sigma\left(\sum_{i=1}^{N} \tilde{V}_{i,j} \sigma(\tilde{U}_i x)\right)
+\end{equation}
+\end{definition}
+
+The key distinction is that $\tilde{V}_{i,j}$ and $\tilde{U}_i$ are randomly assigned and fixed, while only the weights $W_i$ are trained using least squares methods.
+
+\begin{definition}[RNN Basis]
+Let $\tilde{V} \in \mathbb{R}^{N \times N}$ and $\tilde{U} \in \mathbb{R}^N$ be given random weights and $\sigma$ a sigmoid function. Then the RNN basis associated with that set of weights is:
+\begin{equation}
+\phi_j = \sigma\left(\sum_{i=1}^{N} \tilde{V}_{i,j} \sigma(\tilde{U}_i x)\right)
+\end{equation}
+\end{definition}
+
+The RNN interpolation problem involves finding weights $\{W_j\}_{j=1}^N$ that solve the underdetermined linear system $A_{RNN}W = \vec{y}$, where $A_{RNN}(i,j) = \phi_j(x_i)$, given $M$ data points $(x_i, y_i)$ where $1 \leq M \leq N$.
+
+\subsection{Fractional Boundary Value Problem}
+
+The method addresses fractional diffusion equations defined using the following fractional operators:
+
+\begin{definition}[Left Riemann-Liouville Fractional Integral]
+Let $u$ be defined on the interval $(a,b)$ and $\beta > 0$. Then the left Riemann-Liouville fractional integral of order $\beta$ is:
+\begin{equation}
+{_a}D_x^{-\beta}(u(x)) := \int_a^x \frac{(x-\xi)^{\beta-1}}{\Gamma(\beta)} u(\xi) d\xi
+\end{equation}
+\end{definition}
+
+\begin{definition}[Right Riemann-Liouville Fractional Integral]
+Let $u$ be defined on the interval $(a,b)$ and $\beta > 0$. Then the right Riemann-Liouville fractional integral of order $\beta$ is:
+\begin{equation}
+{_x}D_b^{-\beta}(u(x)) := \int_x^b \frac{(\xi-x)^{\beta-1}}{\Gamma(\beta)} u(\xi) d\xi
+\end{equation}
+\end{definition}
+
+The fractional diffusion operators are defined as:
+\begin{align}
+\mathbf{D}^\alpha u(x) &:= DD^{-\beta}Du(x) = DD^{2-\alpha}Du(x) \\
+\mathbf{D}^{\alpha*}u(x) &:= DD^{-\beta*}Du(x) = DD^{(2-\alpha)*}Du(x)
+\end{align}
+where $\beta = 2-\alpha$.
+
+The steady-state fractional diffusion equation is given by:
+\begin{problem}[Steady State Fractional Diffusion Equation]
+Given $\Omega = (0,1)$, $f: \Omega \rightarrow \mathbb{R}$, find $u: \Omega \rightarrow \mathbb{R}$ such that:
+\begin{align}
+p\mathbf{D}^\alpha u + (1-p)\mathbf{D}^{\alpha*}u &= f, \quad \text{in } \Omega \\
+u &= 0, \quad \text{on } \partial\Omega
+\end{align}
+\end{problem}
+
+\subsection{RNN Petrov-Galerkin Method}
+
+The core innovation of this paper is the RNN Petrov-Galerkin method, which combines the computational efficiency of RNNs with the mathematical framework of Petrov-Galerkin methods:
+
+\begin{enumerate}
+    \item Define a bilinear form $B: H^{\alpha/2} \times H^{\alpha/2} \rightarrow \mathbb{R}$ as:
+    \begin{equation}
+    B(u,v) := p(D^{-\beta}Du, Dv) + (1-p)(D^{-\beta*}Du, Dv)
+    \end{equation}
+    
+    \item Use the adjoint property of fractional integrals to define an equivalent bilinear form $\tilde{B}$:
+    \begin{equation}
+    \tilde{B}(u,v) := p(Du, D^{-\beta*}Dv) + (1-p)(Du, D^{-\beta}Dv)
+    \end{equation}
+    
+    \item Use RNN basis functions $\{\phi_j\}_{j=1}^N$ as trial functions and piecewise Lagrange polynomial basis $\{\psi_i\}_{i=1}^n$ as test functions
+    
+    \item The RNN Petrov-Galerkin solution $u_{RPG} = \sum_{j=1}^N W_j\phi_j$ is found by solving:
+    \begin{equation}
+    \tilde{B}(u_{RPG}, v) = (f,v), \quad \forall v \in X_h
+    \end{equation}
+    where $X_h$ is the span of the piecewise Lagrange polynomials
+    
+    \item This leads to the matrix equation:
+    \begin{equation}
+    A_{RPG}W = \vec{F}
+    \end{equation}
+    where $\vec{F}_i = (f, \psi_i)$ and $A_{RPG}(i,j) = \tilde{B}(\phi_j, \psi_i)$
+    
+    \item The matrix $A_{RPG}$ has dimensions $n \times N$ and is not square, so the solution is obtained using least squares
+\end{enumerate}
+
+The algorithm implementation involves:
+\begin{enumerate}
+    \item Generate random weights for the RNN basis functions
+    \item Compute the stiffness matrix entries using quadrature rules
+    \item Solve the least squares problem to find the output layer weights
+    \item Construct the final RNN solution using the optimal weights
+\end{enumerate}
+
+\section{Theoretical Findings}
+
+The paper provides rigorous theoretical foundations for the RNN Petrov-Galerkin method:
+
+\begin{enumerate}
+    \item The bilinear form satisfies the hypotheses of the Lax-Milgram lemma:
+    \begin{itemize}
+        \item Continuity: $B(u,v) \leq C_c \|u\|_{H^{\alpha/2}} \|v\|_{H^{\alpha/2}}$
+        \item Coercivity: $B(u,u) \geq C_o \|u\|^2_{H^{\alpha/2}}$
+    \end{itemize}
+    
+    \item The orthogonality condition:
+    \begin{equation}
+    \tilde{B}(u-u_{RPG}, v_h) = 0, \quad \forall v_h \in X_h
+    \end{equation}
+    
+    \item A crucial Ceá inequality is established:
+    \begin{lemma}[Ceá Inequality]
+    Let $u$ satisfy the fractional differential equation and $u_{RPG}$ be the RNN Petrov-Galerkin solution. Then:
+    \begin{equation}
+    \|u-u_{RPG}\|_{H^{\alpha/2}} \leq \left(1 + \frac{C_c}{C_o}\right) \inf_{v_h \in V_h} \|u-v_h\|_{H^{\alpha/2}}
+    \end{equation}
+    \end{lemma}
+    
+    \item Optimal error estimates:
+    \begin{equation}
+    \|u-u_{RPG}\|_{H^{\alpha/2}} \leq Ch^{r-\alpha/2}\|u\|_{H^r}
+    \end{equation}
+    where $r$ is the maximum regularity of the solution and that admitted by the piecewise polynomial approximation used ($r=2$ for linear elements, $r=3$ for quadratic elements).
+\end{enumerate}
+
+While the theory provides fractional Sobolev norm error estimates, the paper acknowledges limitations in computing these norms directly for the RNN solution. However, the method is expected to provide convergence in $L^2$ and $H^1$ norms, which are verified experimentally.
+
+\section{Numerical Examples and Results}
+
+The paper presents six computational experiments that demonstrate the effectiveness of the RNN Petrov-Galerkin method for solving fractional boundary value problems. For each experiment, the RNN basis used $N = 4/h$ internal nodes, with the weights randomly initialized.
+
+\subsection{Left-Sided Fractional Operator}
+
+\subsubsection{Regular Solution}
+The first experiment solves $\mathbf{D}^\alpha u = f$ with exact solution $u = x - x^4$. Results for $\alpha = 1.6$ and $\alpha = 1.75$ show:
+\begin{itemize}
+    \item $L^2$ errors decrease from $1.3 \times 10^{-3}$ to $8.2 \times 10^{-6}$ as $h$ decreases from $1/4$ to $1/32$ for $\alpha = 1.6$
+    \item Similar convergence is observed for $\alpha = 1.75$
+    \item $H^1$ errors also decrease consistently with mesh refinement
+\end{itemize}
+
+\subsubsection{Irregular Solution}
+The second experiment uses an irregular solution with fractional derivatives in the right-hand side. The exact solution includes terms with fractional powers:
+\begin{itemize}
+    \item $L^2$ errors decrease from $5.9 \times 10^{-3}$ to $3.0 \times 10^{-4}$ as $h$ decreases for $\alpha = 1.6$
+    \item Convergence rates are slower than for the regular solution, as expected
+\end{itemize}
+
+\subsection{Right-Sided Fractional Operator}
+
+\subsubsection{Regular Solution}
+Similar to the first experiment but with the right-sided operator $\mathbf{D}^{\alpha*} u = f$:
+\begin{itemize}
+    \item $L^2$ errors decrease from $3.8 \times 10^{-3}$ to $2.9 \times 10^{-5}$ as $h$ decreases for $\alpha = 1.6$
+    \item Consistent convergence is observed across different values of $\alpha$
+\end{itemize}
+
+\subsubsection{Irregular Solution}
+The irregular solution case for the right-sided operator:
+\begin{itemize}
+    \item Visual representations show excellent agreement between the approximate and exact solutions, even for coarse meshes
+    \item Convergence rates are maintained despite the solution's lack of regularity
+\end{itemize}
+
+\subsection{Two-Sided Fractional Operator}
+
+\subsubsection{Regular Solution}
+For the combined operator $\frac{1}{2}\mathbf{D}^\alpha u + \frac{1}{2}\mathbf{D}^{\alpha*} u = f$:
+\begin{itemize}
+    \item $L^2$ errors decrease from $8.7 \times 10^{-3}$ to $1.4 \times 10^{-5}$ as $h$ decreases for $\alpha = 1.6$
+    \item $H^1$ errors show similar convergence patterns
+\end{itemize}
+
+\subsubsection{Irregular Solution}
+The final experiment uses a two-sided operator with a solution lacking full regularity:
+\begin{itemize}
+    \item Solutions involve hypergeometric functions and non-integer powers
+    \item Despite the complexity, the method achieves good convergence with $L^2$ errors decreasing from $6.2 \times 10^{-3}$ to $3.6 \times 10^{-4}$ as $h$ decreases for $\alpha = 1.6$
+    \item Visual comparisons confirm good agreement between approximate and exact solutions
+\end{itemize}
+
+\section{Implications and Advantages}
+
+The RNN Petrov-Galerkin method offers several significant advantages:
+
+\begin{enumerate}
+    \item \textbf{Computational Efficiency}: By avoiding the traditional neural network training bottleneck, the method achieves faster solution times compared to PINN approaches.
+    
+    \item \textbf{Mathematical Soundness}: The method maintains the rigorous mathematical framework of Petrov-Galerkin approaches, allowing for error analysis and convergence properties.
+    
+    \item \textbf{Flexibility}: Successfully handles both regular and irregular solutions, with consistent convergence properties demonstrated across different problem types.
+    
+    \item \textbf{Applicability to Fractional Problems}: Effectively addresses the challenges posed by non-local fractional operators, which are traditionally difficult to handle with conventional methods.
+    
+    \item \textbf{Reduced Training Requirements}: Unlike PINNs, which may require millions of samples and extensive GPU resources, the RNN approach requires significantly fewer computational resources.
+    
+    \item \textbf{Extensibility}: The approach can be extended to:
+    \begin{itemize}
+        \item Higher-dimensional problems by using RNNs with multiple inputs
+        \item Nonlinear fractional differential equations
+        \item Time-dependent problems
+        \item Integration with other approaches (as augmented loss functions, initial guesses, or in domain decomposition)
+    \end{itemize}
+\end{enumerate}
+
+The demonstrated accuracy and convergence properties make this method particularly valuable for applications in areas where fractional models are important, such as anomalous diffusion in porous media, viscoelasticity, and chaotic dynamics.
+
+\end{document} 

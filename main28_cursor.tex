@@ -1,0 +1,264 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+
+\title{Extreme learning machine-assisted solution of biharmonic equations via its coupled schemes}
+\author{Xi'an Li, Jinran Wu, Zhe Ding, Xin Tai, Liang Liu, You-Gan Wang}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+Biharmonic equations are fourth-order partial differential equations that appear frequently in physics and applied mathematics, particularly in elasticity, Stokes flow problems, and thin plate splines. The standard biharmonic equation takes the form:
+\begin{align}
+\Delta^2 u(x) &= f(x), \quad \text{in } \Omega, \\
+u(x) &= g(x), \quad \text{on } \partial\Omega, \\
+\Delta u(x) &= h(x), \quad \text{on } \partial\Omega,
+\end{align}
+where $\Omega$ is a polygonal or polyhedral domain in $d$-dimensional Euclidean space with a piecewise Lipschitz boundary, $f(x) \in L^2(\Omega)$ is a prescribed function, and $\Delta$ represents the standard Laplace operator.
+
+Traditional numerical methods for solving biharmonic equations include finite difference, finite volume, and finite element methods. However, these approaches face significant challenges when dealing with irregular domains and high-dimensional problems—often referred to as the "curse of dimensionality."
+
+This paper introduces the Coupled Extreme Learning Machine (CELM) method, which combines the computational efficiency of Extreme Learning Machines (ELMs) with a coupled scheme approach to solve biharmonic equations.
+
+\section{Methodology}
+
+\subsection{Extreme Learning Machine (ELM)}
+
+The Extreme Learning Machine is a single hidden layer fully connected neural network designed to map from $\mathbb{R}^d$ to $\mathbb{R}$. The distinctive feature of ELM is that the input layer weights and biases are randomly assigned and fixed during training, with only the output weights analytically determined.
+
+Mathematically, the ELM mapping $\ell(x)$ with an input $x \in \mathbb{R}^d$ is expressed as:
+\begin{equation}
+\ell(x) = \sum_{i=1}^{m} \beta_i \sigma_i(W^{[i]}x + b_i),
+\end{equation}
+where:
+\begin{itemize}
+    \item $W = [W^{[1]}, W^{[2]}, \ldots, W^{[m]}]^T \in \mathbb{R}^{m \times d}$ with $W^{[i]} \in \mathbb{R}^d$ being the weight of the $i$-th hidden unit
+    \item $b = (b_1, b_2, \ldots, b_m)^T \in \mathbb{R}^m$ is the bias vector
+    \item $\sigma(\cdot)$ is an element-wise non-linear activation function
+    \item $\beta = [\beta_1, \beta_2, \ldots, \beta_m]^T \in \mathbb{R}^m$ is the weight vector connecting the hidden units to the output
+\end{itemize}
+
+\subsection{Coupled Extreme Learning Machine (CELM) for Biharmonic Equations}
+
+The CELM approach transforms the original fourth-order biharmonic equation into two coupled second-order Poisson equations by introducing an auxiliary variable $v = \Delta u$:
+\begin{align}
+\begin{cases}
+\Delta v = f, & \text{in } \Omega \\
+v = h, & \text{on } \partial\Omega
+\end{cases}
+\quad \text{and} \quad
+\begin{cases}
+\Delta u = v, & \text{in } \Omega \\
+u = g, & \text{on } \partial\Omega
+\end{cases}
+\end{align}
+
+The CELM method uses two ELM networks to approximate the solutions $u$ and $v$:
+\begin{align}
+u(x; \tilde{W}, \tilde{b}) &= \sigma(x^T \cdot \tilde{W} + \tilde{b}^T) \cdot \tilde{\beta} \\
+v(x; \hat{W}, \hat{b}) &= \sigma(x^T \cdot \hat{W} + \hat{b}^T) \cdot \hat{\beta}
+\end{align}
+
+Substituting the approximation for $v$ into the first equation yields:
+\begin{align}
+\Delta \left( \sum_{i=1}^{K} \hat{\beta}_i \sigma(V_i(x)) \right) &= f(x) \\
+\sum_{i=1}^{K} \hat{\beta}_i \sigma(V_i(x)) &= h(x)
+\end{align}
+where $V_i(x) = x^T \cdot \hat{W}^{[i]} + \hat{b}_i$ is the linear output for the $i$-th hidden unit of the ELM, and $K$ is the number of hidden units.
+
+Similarly, for the second equation:
+\begin{align}
+\Delta \left( \sum_{j=1}^{N} \tilde{\beta}_j \sigma(U_j(x)) \right) &= \sum_{i=1}^{K} \hat{\beta}_i \sigma(V_i(x)) \\
+\sum_{j=1}^{N} \tilde{\beta}_j \sigma(U_j(x)) &= g(x)
+\end{align}
+where $U_j(x) = x^T \cdot \tilde{W}^{[j]} + \tilde{b}_j$, and $N$ is the number of hidden units.
+
+\subsection{Algorithm Implementation}
+
+The CELM algorithm involves the following steps:
+
+\begin{enumerate}
+    \item Generating collocation points: Sample $Q$ random points $\{x_I^q\}_{q=1}^Q$ from the interior of the domain $\Omega$ and $P$ random points $\{x_B^p\}_{p=1}^P$ from the boundary $\partial\Omega$.
+    
+    \item Computing residuals at the collocation points:
+    \begin{align}
+    R_v(x_I^q) &= \Delta \left( \sum_{i=1}^{K} \hat{\beta}_i \sigma(V_i(x_I^q)) \right) - f(x_I^q) \\
+    R_u(x_I^q) &= \Delta \left( \sum_{j=1}^{N} \tilde{\beta}_j \sigma(U_j(x_I^q)) \right) - \sum_{i=1}^{K} \hat{\beta}_i \sigma(V_i(x_I^q)) \\
+    L_v(x_B^p) &= \sum_{i=1}^{K} \hat{\beta}_i \sigma(V_i(x_B^p)) - h(x_B^p) \\
+    L_u(x_B^p) &= \sum_{j=1}^{N} \tilde{\beta}_j \sigma(U_j(x_B^p)) - g(x_B^p)
+    \end{align}
+    
+    \item Setting up the linear system $H\beta = S$ where:
+    \begin{equation}
+    H = 
+    \begin{bmatrix}
+    O & H_{12} \\
+    H_{21} & -H_{22} \\
+    H_{31} & O \\
+    O & H_{42}
+    \end{bmatrix},
+    \quad
+    \beta = 
+    \begin{bmatrix}
+    \tilde{\beta} \\
+    \hat{\beta}
+    \end{bmatrix},
+    \quad
+    S = 
+    \begin{bmatrix}
+    S_f \\
+    S_0 \\
+    S_g \\
+    S_h
+    \end{bmatrix}
+    \end{equation}
+    
+    with matrix blocks:
+    \begin{itemize}
+        \item $H_{12}$ contains second derivatives of activation functions evaluated at interior points: $\sigma''(V_i(x_I^q))$
+        \item $H_{21}$ contains second derivatives of activation functions: $\sigma''(U_j(x_I^q))$
+        \item $H_{22}$ contains activation function values: $\sigma(V_i(x_I^q))$
+        \item $H_{31}$ contains activation function values at boundary points: $\sigma(U_j(x_B^p))$
+        \item $H_{42}$ contains activation function values at boundary points: $\sigma(V_i(x_B^p))$
+    \end{itemize}
+    
+    and right-hand side vectors:
+    \begin{itemize}
+        \item $S_f = [f(x_I^1), f(x_I^2), \ldots, f(x_I^Q)]^T$
+        \item $S_0 = [0, 0, \ldots, 0]^T$ (zero vector of length $Q$)
+        \item $S_g = [g(x_B^1), g(x_B^2), \ldots, g(x_B^P)]^T$
+        \item $S_h = [h(x_B^1), h(x_B^2), \ldots, h(x_B^P)]^T$
+    \end{itemize}
+    
+    \item Solving the linear system for $\beta$ using one of the following approaches:
+    \begin{itemize}
+        \item If $H$ is square and invertible: $\beta = H^{-1}S$
+        \item If $H$ is rectangular and full rank: $\beta = H^\dagger S$ where $H^\dagger = (H^T H)^{-1}H^T$ is the pseudo-inverse
+        \item If $H$ is singular: Use Tikhonov regularization with $\beta = (H^T H + \lambda I)^{-1}HS$ where $\lambda > 0$ is the ridge parameter
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Activation Functions and Parameter Initialization}
+
+The paper investigates the influence of different activation functions on the CELM performance:
+\begin{itemize}
+    \item Hyperbolic tangent (tanh)
+    \item Gaussian function
+    \item Sine function
+    \item Trigonometric combination (sine + cosine)
+\end{itemize}
+
+\begin{remark}[Lipschitz Continuity]
+If an activation function $\sigma$ is continuous (i.e., $\sigma \in C^1$) and satisfies the boundedness condition:
+\begin{align}
+|\sigma(x)| < 1 \quad \text{and} \quad |\sigma'(x)| < 1
+\end{align}
+for any $x \in \mathbb{R}$, then:
+\begin{align}
+|\sigma(x) - \sigma(y)| \leq |x-y| \quad \text{and} \quad |\sigma'(x) - \sigma'(y)| < |x-y|
+\end{align}
+for any $x, y \in \mathbb{R}$. All the activation functions mentioned above satisfy this condition, ensuring boundedness and robust regularity.
+\end{remark}
+
+For parameter initialization, the paper explores several approaches:
+\begin{itemize}
+    \item Normal distribution initialization (mean=0, standard deviation=10)
+    \item Unitary uniform distribution initialization in $[-1, 1]$
+    \item Scale uniform distribution initialization in $[-\sigma, \sigma]$ with scale factor $\sigma = 10$
+    \item Mixed initialization (normal for weights, scale uniform for biases)
+\end{itemize}
+
+\section{Numerical Examples and Results}
+
+The paper evaluates the CELM method using four numerical examples with different domain complexities and dimensionalities.
+
+\subsection{Performance Metrics}
+
+Two error metrics are used to assess the CELM performance:
+\begin{itemize}
+    \item Point-wise absolute error: $APE(x_i) = |\tilde{u}(x_i) - u^*(x_i)|$
+    \item Relative error: $REL = \sqrt{\frac{\sum_{i=1}^{N'} |\tilde{u}(x_i) - u^*(x_i)|^2}{\sum_{i=1}^{N'} |u^*(x_i)|^2}}$
+\end{itemize}
+where $\tilde{u}(x_i)$ is the CELM approximation, $u^*(x_i)$ is the exact solution, and $N'$ is the number of test points.
+
+\subsection{Example 1: Regular 2D Domain}
+
+The first example solves the biharmonic equation in a square domain $\Omega = [-1, 1] \times [-1, 1]$ with the analytical solution $u(x_1, x_2) = \sin(\pi x_1)\sin(\pi x_2)$ and corresponding force term $f(x_1, x_2) = 4\pi^4 \sin(\pi x_1)\sin(\pi x_2)$. Boundary conditions are $g(x_1, x_2) = 0$ and $h(x_1, x_2) = 0$ on $\partial\Omega$.
+
+Results:
+\begin{itemize}
+    \item CELM with sine and sine+cosine activation functions achieved the lowest errors (around $10^{-14}$) with scale uniform initialization.
+    \item Hyperbolic tangent and Gaussian activation functions produced higher errors ($10^{-6}$ to $10^{-9}$).
+    \item The relative error did not decrease with increasing numbers of hidden units (beyond a threshold), indicating stable performance.
+    \item Runtime increased superlinearly with more hidden neurons, but the increase was gradual.
+    \item The CELM model remained stable and robust across different scale factors $\sigma$.
+    \item Comparison with the finite difference method (FDM) showed CELM significantly outperformed FDM in both accuracy and runtime, especially for dense grids.
+\end{itemize}
+
+\subsection{Example 2: Irregular 2D Domain}
+
+The second example addresses the biharmonic equation in a hexagram domain derived from the unit square $[0,1] \times [0,1]$. The analytical solution is $u(x_1, x_2) = 10(x_1 - 2x_1^3 + x_1^4)(x_2 - 2x_2^3 + x_2^4)$.
+
+Results:
+\begin{itemize}
+    \item On this irregular domain, CELM with sine activation function and scale uniform initialization achieved the best performance with relative errors around $10^{-10}$.
+    \item The model showed excellent stability and robustness with varying numbers of hidden nodes and scale factors.
+    \item The coefficient matrix remained full rank, eliminating the need for Tikhonov regularization.
+\end{itemize}
+
+\subsection{Example 3: 3D Domain with Complex Geometry}
+
+The third example tackles the biharmonic equation in a three-dimensional cubic domain $\Omega = [0,1] \times [0,1] \times [0,1]$ with one large hole and eight smaller holes. The analytical solution is $u(x_1, x_2, x_3) = 10(x_1 - 2x_1^3 + x_1^4)(x_2 - 2x_2^3 + x_2^4)(x_3 - 2x_3^3 + x_3^4)$.
+
+Results:
+\begin{itemize}
+    \item CELM with sine and sine+cosine activation functions demonstrated superior performance (relative errors around $10^{-13}$) compared to hyperbolic tangent and Gaussian functions.
+    \item Scale uniform initialization provided the best results for parameter initialization.
+    \item The method showed favorable stability and robustness with increasing numbers of hidden nodes and varying scale factors.
+\end{itemize}
+
+\subsection{Example 4: 3D Spherical Shell Domain}
+
+The final example examines the biharmonic equation on a closed domain $\Omega$ bounded by two spherical surfaces with radii $r_1 = 0.5$ and $r_2 = 1.0$. The exact solution is $u(x_1, x_2, x_3) = \sin(\pi x_1)\sin(\pi x_2)\sin(\pi x_3)$.
+
+Results:
+\begin{itemize}
+    \item For this spherical shell geometry, CELM with sine and sine+cosine activation functions again achieved the lowest errors (around $10^{-9}$) when using scale uniform initialization.
+    \item The point-wise error distribution confirmed that these activation functions yielded significantly lower errors than hyperbolic tangent and Gaussian functions.
+    \item The method maintained stability and robustness across varying numbers of hidden nodes and scale factors.
+\end{itemize}
+
+\section{Implications and Advantages}
+
+The CELM method offers several significant advantages for solving biharmonic equations:
+
+\begin{enumerate}
+    \item \textbf{Mesh-Free Approach}: Unlike traditional numerical methods like finite elements or finite differences, CELM operates without requiring mesh generation, which is particularly valuable for complex geometries.
+    
+    \item \textbf{Computational Efficiency}: By avoiding the iterative gradient descent-based techniques used in physics-informed neural networks (PINNs), CELM provides a more efficient solution method.
+    
+    \item \textbf{High Accuracy}: The numerical examples demonstrate that CELM achieves remarkably high accuracy, often with relative errors in the range of $10^{-9}$ to $10^{-14}$, which outperforms traditional methods.
+    
+    \item \textbf{Stability and Robustness}: The method shows stable performance across varying numbers of hidden units and different scale factors for initialization, indicating robustness.
+    
+    \item \textbf{Flexibility for Complex Geometries}: CELM effectively handles both regular and irregular domains in two and three dimensions, including geometries with holes and spherical shells.
+    
+    \item \textbf{Activation Function Selection}: The study reveals that sine and trigonometric (sine+cosine) activation functions significantly outperform hyperbolic tangent and Gaussian functions for biharmonic problems.
+    
+    \item \textbf{Initialization Strategy Impact}: Scale uniform initialization of weights and biases consistently produces the best results, providing practical guidance for implementing the method.
+\end{enumerate}
+
+The CELM method shows potential for extension to other types of PDEs beyond biharmonic equations. The same approach could be applied to various steady-state and time-dependent scenarios, as well as inverse problems where traditional methods face significant challenges.
+
+\end{document} 

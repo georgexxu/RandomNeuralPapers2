@@ -1,0 +1,296 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{Remark}
+
+\title{Runge--Kutta Random Feature Method for Solving Multiphase Flow Problems of Cells}
+\author{Yangtao Deng and Qiaolin He}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+Cell collective migration plays a crucial role in many physiological processes, with growing interest in understanding how mechanical forces interact with collective cell behavior at the tissue level. Modeling these complex phenomena often leads to nonlinear, strongly coupled partial differential equations (PDEs) that present significant computational challenges.
+
+Traditional numerical methods like finite difference, finite volume, and finite element methods face difficulties when dealing with:
+\begin{itemize}
+    \item Complex geometric shapes
+    \item Mesh generation complexities
+    \item Limited generalization capabilities
+    \item Computational domain limitations
+\end{itemize}
+
+While deep learning approaches have emerged as alternatives for solving PDEs without mesh generation, they often lack reliable error control and convergence guarantees.
+
+This paper introduces the Runge-Kutta Random Feature Method (RK-RFM), which combines the Random Feature Method (RFM) for spatial discretization with the explicit Runge-Kutta method for temporal discretization. This hybrid approach aims to solve the nonlinear and strongly coupled multiphase flow problems of cells effectively while maintaining high accuracy in both space and time.
+
+\section{Problem Formulation}
+
+\subsection{Random Feature Method (RFM) for Static Problems}
+
+The RFM was initially designed to solve static linear boundary-value problems of the form:
+\begin{align}
+    L\phi(x) &= f(x), \quad x \in \Omega,\\
+    B\phi(x) &= g(x), \quad x \in \partial\Omega,
+\end{align}
+where $L$ and $B$ are linear differential and boundary operators, respectively.
+
+The key components of RFM include:
+\begin{enumerate}
+    \item Domain decomposition: Divide $\Omega$ into $M_p$ non-overlapping subdomains $\Omega_n$ with centers $x_n$.
+    \item Linear transformation: Map each $\Omega_n$ into $[-1,1]^d$ using $\tilde{x} = \frac{1}{r_n}(x-x_n)$.
+    \item Partition of Unity (PoU): Define PoU functions $w_n$ with support on $\Omega_n$.
+    \item Random feature functions: Construct functions $u_{nj}$ using two-layer neural networks:
+    \begin{equation}
+        u_{nj}(x) = \sigma(W_{nj}^T\tilde{x}+b_{nj}),
+    \end{equation}
+    where $\sigma$ is a nonlinear activation function, and $W_{nj}$ and $b_{nj}$ are randomly chosen from uniform distribution $U(-R_m, R_m)$.
+    \item Approximate solution: Form a linear combination:
+    \begin{equation}
+        \tilde{\phi}(x) = \left(\sum_{n=1}^{M_p}w_n(x)\sum_{j=1}^{J_n}u^1_{nj}u^1_{nj}(x), \ldots, \sum_{n=1}^{M_p}w_n(x)\sum_{j=1}^{J_n}u^{d_\phi}_{nj}u^{d_\phi}_{nj}(x)\right)^T,
+    \end{equation}
+    where $u^i_{nj} \in \mathbb{R}$ are unknown coefficients to be determined.
+\end{enumerate}
+
+The RFM determines these coefficients by minimizing the loss function through linear least squares, using rescaling parameters to balance equation and boundary condition weights.
+
+\subsection{Multiphase Flow Problem of Cells}
+
+The paper focuses on a time-dependent multiphase flow problem that models cells as active deformable droplets:
+\begin{align}
+    \partial_t \phi_i &= -v_i \cdot \nabla\phi_i - \frac{\delta F}{\delta \phi_i} = F(x,t,\phi(x,t)), \quad x,t \in \Omega \times (0,T], \quad i=1,\ldots,d_\phi, \\
+    B\phi(x,t) &= g(x,t), \quad x,t \in \partial\Omega \times [0,T], \\
+    \phi(x,0) &= h(x), \quad x \in \Omega,
+\end{align}
+where $\phi_i$ represents the $i$-th cell, with $\phi_i = 1$ and $\phi_i = 0$ indicating the interior and exterior of the cell, respectively. The cell boundary is defined at $\phi_i = \frac{1}{2}$.
+
+The free energy $F$ is defined as $F = F_{CH} + F_{area} + F_{rep}$, where:
+\begin{align}
+    F_{CH} &= \sum_i \int \frac{c}{k}(\phi_i^2(1-\phi_i)^2 + k^2(\nabla\phi_i)^2) dx, \\
+    F_{area} &= \sum_i \lambda\left(1-\frac{1}{\pi R^2}\int\phi_i^2 dx\right)^2, \\
+    F_{rep} &= \sum_i \sum_{j\neq i}\frac{j}{k}\int\phi_i^2\phi_j^2 dx.
+\end{align}
+
+These terms represent:
+\begin{itemize}
+    \item $F_{CH}$: Cahn-Hilliard free energy maintaining cell interface stability
+    \item $F_{area}$: Soft regulation for cell area, targeting area close to $\pi R^2$
+    \item $F_{rep}$: Penalty for cell overlap
+\end{itemize}
+
+The total velocity $v_i$ of each cell is determined by the force balance equation:
+\begin{equation}
+    \eta v_i = F^{int}_i,
+\end{equation}
+where $\eta$ is a substrate friction coefficient and $F^{int}_i$ is the total force acting on the cell interface:
+\begin{equation}
+    F^{int}_i = \int \phi_i \nabla \cdot \sigma^{tissue} dx = -\int \sigma^{tissue} \cdot \nabla\phi_i dx.
+\end{equation}
+
+The tissue stress tensor $\sigma^{tissue}$ is decomposed into passive and active stresses:
+\begin{equation}
+    \sigma^{tissue} = -PI - \zeta Q,
+\end{equation}
+where $\zeta$ represents activity strength, and $P$ and $Q$ are tissue pressure and nematic tensor.
+
+\section{Runge--Kutta Random Feature Method (RK-RFM)}
+
+\subsection{Algorithm Description}
+
+The RK-RFM combines the RFM for spatial discretization with the explicit Runge-Kutta method for temporal discretization. 
+
+Given a time partition $[0,T]: 0 = t_0 < t_1 < \ldots < t_K = T$, the explicit RK scheme is:
+\begin{align}
+    D_1(x) &= F(x,t_k,\phi_{t_k}(x)), \\
+    D_2(x) &= F(x,t_k+c_2\Delta t,\phi_{t_k}(x)+a_{21}\Delta t D_1(x)), \\
+    &\vdots \\
+    D_p(x) &= F(x,t_k+c_p\Delta t,\phi_{t_k}(x)+\Delta t\sum_{i=1}^{p-1}a_{pi}D_i(x)), \\
+    \phi_{t_{k+1}}(x) &= \phi_{t_k}(x)+\Delta t\sum_{i=1}^{p}b_i D_i(x) \equiv \phi_{t_k}(x)+\Delta t H(x,t_k,\phi_{t_k}(x),\Delta t),
+\end{align}
+where $a_{pi}$, $b_i$, and $c_i$ are coefficients of the $p$-th order RK method.
+
+The approximate solution $\tilde{\phi}_{t_{k+1}}(x)$ is represented using the RFM:
+\begin{equation}
+    \tilde{\phi}_{t_{k+1}}(x) = \left(\sum_{n=1}^{M_p}w_n(x)\sum_{j=1}^{J_n}u^1_{nj,t_{k+1}}u^1_{nj,t_{k+1}}(x), \ldots, \sum_{n=1}^{M_p}w_n(x)\sum_{j=1}^{J_n}u^{d_\phi}_{nj,t_{k+1}}u^{d_\phi}_{nj,t_{k+1}}(x)\right)^T.
+\end{equation}
+
+The RK-RFM minimizes the loss:
+\begin{align}
+    \text{Loss}\{u^i_{nj,t_{k+1}}\} &= \sum_{n=1}^{M_p}\sum_{q=1}^{Q}\|k_{n,q,t_{k+1}}(\tilde{\phi}_{t_{k+1}}(x^n_q) - \phi_{t_{k+1}}(x^n_q))\|^2_2 \\
+    &+ \sum_{n=1}^{M_p}\sum_{x^n_q \in \partial\Omega}\|k_{n,b,t_{k+1}}(B\tilde{\phi}_{t_{k+1}}(x^n_q) - g(x^n_q,t_{k+1}))\|^2_2,
+\end{align}
+to find the optimal coefficients $U_{t_{k+1}} = (u^i_{nj,t_{k+1}})^T$ of $\tilde{\phi}_{t_{k+1}}(x)$.
+
+This leads to a linear system:
+\begin{equation}
+    A_{t_{k+1}}U_{t_{k+1}} = f_{t_{k+1}},
+\end{equation}
+which is solved using linear least squares.
+
+\subsection{Implementation Strategies}
+
+\begin{enumerate}
+    \item \textbf{Non-automatic differentiation:} For efficiency, the derivative functions are manually derived before computation:
+    \begin{equation}
+        \nabla^l_x u(x,W,b) = \nabla^l_x \sigma(W^T\tilde{x}+b),
+    \end{equation}
+    and stored for direct retrieval during computation, avoiding costly automatic differentiation.
+    
+    \item \textbf{Parallelization:} The same set of random feature functions is used for different components of the solution:
+    \begin{equation}
+        A_{t_{k+1}}U_{t_{k+1}} = A_{t_{k+1}}[U^1_{t_{k+1}}, \ldots, U^{d_\phi}_{t_{k+1}}] = [f^1_{t_{k+1}}, \ldots, f^{d_\phi}_{t_{k+1}}] = f_{t_{k+1}},
+    \end{equation}
+    allowing the linear least squares problem to be solved once for all components.
+\end{enumerate}
+
+\subsection{Complete RK-RFM Algorithm}
+
+\begin{algorithm}
+\caption{The Runge--Kutta Random Feature Method}
+\begin{algorithmic}[1]
+\REQUIRE{$M_p$, $J_n$, $Q$, $T$, $K$, RK coefficients $a_{pi}$, $b_i$, $c_i$, $R_m$, $c$}
+\ENSURE{Optimal $U_{t_1}, \ldots, U_{t_K}$}
+\STATE{Divide $\Omega$ into $M_p$ non-overlapping subdomains $\Omega_n$}
+\STATE{Sample $Q$ collocation points $\{x^n_q\}$ in each $\Omega_n$}
+\STATE{Compute the derivative functions $\nabla^l_x u(x,W,b)$}
+\FOR{$k = 0, 1, 2, \ldots, K-1$}
+    \STATE{Construct $J_n$ random feature functions $u_{nj,t_{k+1}}$ on $\Omega_n$}
+    \STATE{Compute $\phi_{t_{k+1}}(x)$ according to the RK scheme}
+    \STATE{Assemble the linear system and solve by least squares to obtain $U_{t_{k+1}}$}
+    \STATE{Compute $\tilde{\phi}_{t_{k+1}}(x)$ using the RFM representation}
+    \STATE{$\phi_{t_{k+1}}(x) := \tilde{\phi}_{t_{k+1}}(x)$}
+\ENDFOR
+\RETURN{Optimal $U_{t_1}, \ldots, U_{t_K}$}
+\end{algorithmic}
+\end{algorithm}
+
+\section{Theoretical Error Estimates}
+
+The paper provides rigorous error estimates for the RK-RFM, establishing its convergence properties. The key results include:
+
+\begin{lemma}
+Let $\sigma$ be a bounded nonconstant piecewise continuous activation function, $d_\phi=1$, $G_M(x)$ be of the form of the RFM approximation, and $M = M_p J_n$ denote the degree of freedom. Then, for any $f \in C(\Omega)$, there exists a sequence of $G_M(x)$ such that:
+\begin{equation}
+    \lim_{M\to\infty} \|G_M(x) - f(x)\|_{L^2} = 0, \quad \forall x \in \Omega.
+\end{equation}
+\end{lemma}
+
+\begin{lemma}
+For the RFM, the numerical solution $\hat{U} = (\hat{u}^i_{nj})^T$ and the optimal solution $\tilde{U} = (\tilde{u}^i_{nj})^T$ satisfy:
+\begin{equation}
+    E_{du}[\|\hat{U} - \tilde{U}\|_{L^2}] \leq \frac{d}{\sqrt{d_\phi M_p J_n}},
+\end{equation}
+where $d$ is related to the distribution of random parameters.
+\end{lemma}
+
+\begin{theorem}
+Let $\phi^e_{t_k}$ be the exact solution and $\phi_{t_k}$ be the solution to the explicit $p$-th order RK method. Let $\tilde{\phi}_{t_k}$ and $\hat{\phi}_{t_k}$ be the optimal and numerical RFM solutions. Under certain Lipschitz conditions and approximation assumptions, there exist constants $C_1, C_2 > 0$ such that:
+\begin{equation}
+    E_{du}[\|\hat{\phi}_{t_k}(x) - \phi^e_{t_k}(x)\|_{L^2}] \leq e^{L(t_k-t_0)}\left(\frac{\Delta t L C_1}{\sqrt{d_\phi M_p J_n}}d + \sqrt{d_\phi}e\right) + C_2 \Delta t^p,
+\end{equation}
+where the error consists of two parts:
+\begin{equation}
+    e_1(\Delta t) = e^{L(t_k-t_0)}\left(\frac{\Delta t L C_1}{\sqrt{d_\phi M_p J_n}}d + \sqrt{d_\phi}e\right), \quad e_2(\Delta t) = C_2\Delta t^p.
+\end{equation}
+\end{theorem}
+
+\begin{remark}
+The error consists of two components: $e_1(\Delta t)$ represents the error from RFM and optimization (inversely proportional to $\Delta t$), while $e_2(\Delta t)$ is the error from the RK method (proportional to $\Delta t^p$). Ideally, $\Delta t$ should be chosen to balance these errors as $e_1(\Delta t) \approx e_2(\Delta t)$.
+\end{remark}
+
+\section{Numerical Experiments}
+
+\subsection{Convergence Tests}
+
+The paper first validates the convergence of the RK-RFM using a test problem with known exact solution:
+\begin{align}
+    \phi_1(x,t) &= \sin(x_1)\sin(x_2)e^{-t}, \\
+    \phi_2(x,t) &= \cos(x_1)\cos(x_2)e^{-t},
+\end{align}
+with appropriate initial and boundary conditions.
+
+The method achieves second-order convergence in time when using the second-order RK scheme. Key findings include:
+
+\begin{itemize}
+    \item For the \texttt{tanh} activation function, when $\Delta t = 5 \times 10^{-4}$, the error reaches minimum as $e_1(\Delta t) \approx e_2(\Delta t)$.
+    \item For the \texttt{cos} activation function, minimum error occurs at $\Delta t = 5 \times 10^{-5}$.
+    \item The error decreases as the number of random feature functions $J_n$ and subdomains $M_p$ increase, confirming the universal approximation capability.
+    \item Increasing the number of collocation points $Q$ also reduces error by decreasing the variance in random feature performance.
+\end{itemize}
+
+\subsection{Multiphase Flow of Cells}
+
+The method was applied to simulate the multiphase flow problem of cells in a domain $\Omega = (0,200)^2 \times (0,T]$ with initial conditions:
+\begin{equation}
+    \phi_i(x,0) = \frac{1 + \tanh\left(r - \|x - C_i\|_{L^2}\right)}{2}, \quad i = 1, \ldots, d_\phi,
+\end{equation}
+and periodic boundary conditions. The simulation involved 240 cells.
+
+The simulation parameters included:
+\begin{itemize}
+    \item Physical parameters: $c = 0.01$ (elasticity), $\lambda = 3$ (area constraint), $j = 0.1$ (repulsion), $k = 2.5$ (interface width), $R = 8.0$ (target radius), $\eta = 2$ (friction), $\zeta = 0.005$ (activity)
+    \item Algorithm parameters: $\Delta t = 0.1$, $M_p = 4 \times 4$, $Q = 40 \times 40$, $J_n = 600$
+\end{itemize}
+
+Key observations from the simulations:
+
+\begin{enumerate}
+    \item Cells gradually increase in size due to the area constraint term $F_{area}$.
+    \item When cells approach each other, the repulsion term $F_{rep}$ pushes them apart.
+    \item The Cahn-Hilliard term $F_{CH}$ maintains stable cell interfaces.
+    \item Cells arrange into more ordered structures as the system evolves toward steady state.
+    \item Larger elasticity parameter $c$ leads to rounder cells with greater resistance to deformation.
+    \item Larger repulsion parameter $j$ increases spacing between cells.
+\end{enumerate}
+
+Additional investigations examined the system's behavior under varying activity parameters $\zeta$:
+
+\begin{itemize}
+    \item The root mean square velocity $v_{rms}$ and nematic order $S_{rms}$ develop nonzero values with increasing activity.
+    \item An activity threshold emerges, below which the system returns to equilibrium, and above which it maintains large flows and increasing order.
+    \item With negative activity ($\zeta < 0$), the system remains stable as interface interactions restore the stable state.
+\end{itemize}
+
+\section{Implications and Advantages}
+
+The RK-RFM offers several significant advantages for solving multiphase flow problems:
+
+\begin{enumerate}
+    \item \textbf{High Accuracy:} Maintains high numerical accuracy in both space and time domains.
+    
+    \item \textbf{Mesh-Free:} Eliminates the need for mesh generation, making it well-suited for complex geometric configurations.
+    
+    \item \textbf{Nonlinear Problem Handling:} Effectively solves PDEs with strong nonlinearity that traditional methods struggle with.
+    
+    \item \textbf{Computational Efficiency:} 
+    \begin{itemize}
+        \item Non-automatic differentiation strategy accelerates computation
+        \item Parallelization through shared random feature functions saves computational resources
+        \item Achieves higher accuracy with fewer degrees of freedom compared to traditional methods
+    \end{itemize}
+    
+    \item \textbf{Theoretical Foundation:} Provides rigorous error estimates and convergence analysis, addressing a key limitation of many machine learning-based PDE solvers.
+    
+    \item \textbf{Biological Applications:} Successfully captures complex cell dynamics, including:
+    \begin{itemize}
+        \item Growth and area maintenance
+        \item Cell-cell repulsion
+        \item Interface stability
+        \item Collective migration and ordering
+        \item Activity-dependent phase transitions
+    \end{itemize}
+\end{enumerate}
+
+The method's balance of accuracy, efficiency, and theoretical foundations makes it a promising approach for multiscale biological simulations and other complex PDE systems that exhibit strong nonlinearities and coupling effects.
+
+\end{document} 

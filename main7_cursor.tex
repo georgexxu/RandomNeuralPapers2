@@ -1,0 +1,313 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+
+\title{Local Extreme Learning Machines and Domain Decomposition for Solving Linear and Nonlinear Partial Differential Equations}
+\author{Summary of Dong and Li (2021)}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+Neural network-based methods for solving partial differential equations (PDEs) have attracted significant research interest in recent years. However, existing deep neural network (DNN) methods like Deep Galerkin Method (DGM) and Physics-Informed Neural Networks (PINN) suffer from limitations in accuracy and computational efficiency. This paper introduces a method called Local Extreme Learning Machines (locELM) that combines domain decomposition with shallow neural networks to achieve superior performance for solving linear and nonlinear PDEs.
+
+The locELM method addresses key limitations of existing DNN-based PDE solvers:
+\begin{itemize}
+    \item It achieves exponential or near-exponential convergence with respect to degrees of freedom
+    \item It produces highly accurate solutions (orders of magnitude better than DGM/PINN)
+    \item It requires significantly less computational time than traditional DNN approaches
+    \item It performs comparably to or better than classical finite element methods (FEM)
+\end{itemize}
+
+\section{Algorithm Description}
+
+\subsection{Domain Decomposition and Local Network Architecture}
+The locELM method represents a novel approach to solving PDEs by combining three key ideas:
+\begin{enumerate}
+    \item Domain decomposition
+    \item Local neural networks
+    \item Extreme learning machine (ELM) training
+\end{enumerate}
+
+Given a domain $\Omega$ in $d$ dimensions (where one dimension may represent time), the method:
+
+\begin{enumerate}
+    \item Partitions $\Omega$ into $N_e$ non-overlapping sub-domains:
+    \begin{equation}
+        \Omega = \Omega_1 \cup \Omega_2 \cup \cdots \cup \Omega_{N_e}
+    \end{equation}
+    
+    \item Assigns a separate shallow feed-forward neural network to each sub-domain $\Omega_i$ to represent the local solution $f_i(x)$
+    
+    \item Imposes $C^k$ continuity conditions across sub-domain boundaries (where $k$ depends on the order of the PDE)
+    
+    \item Uses shallow neural networks with a small number of hidden layers (typically 1-3), but allows the last hidden layer to be wide
+\end{enumerate}
+
+Each local neural network has specific characteristics:
+\begin{itemize}
+    \item The weight/bias coefficients for all hidden layers are pre-set to random values in $[-R_m, R_m]$ and remain fixed
+    \item Only the weights of the output layer are trainable parameters
+    \item The output layer is linear (no activation function or bias)
+\end{itemize}
+
+The local representation on sub-domain $\Omega_s$ is:
+\begin{equation}
+    u^s_i(x) = \sum_{j=1}^{M} V^s_j(x) w^s_{ji}, \quad x \in \Omega_s, \quad 1 \leq i \leq N
+\end{equation}
+where $V^s_j(x)$ is the output of the last hidden layer, $w^s_{ji}$ are the trainable parameters, and $M$ is the number of nodes in the last hidden layer.
+
+\subsection{Training Process for Linear PDEs}
+For linear PDEs, the training process involves:
+
+\begin{enumerate}
+    \item Placing collocation points within each sub-domain and on boundaries
+    
+    \item Enforcing the PDE on interior collocation points:
+    \begin{equation}
+        \sum_{j=1}^{M} [L V^{emn}_j(x^{emn}_p, y^{emn}_q)] w^{emn}_j = f(x^{emn}_p, y^{emn}_q)
+    \end{equation}
+    
+    \item Enforcing boundary conditions on domain boundaries
+    
+    \item Enforcing $C^k$ continuity conditions across sub-domain boundaries
+    
+    \item Formulating these constraints as a system of linear equations
+    
+    \item Solving the resulting system using linear least squares minimization
+\end{enumerate}
+
+The continuity conditions are crucial for coupling the local neural networks together, allowing information to propagate between sub-domains while maintaining the required smoothness.
+
+\subsection{Block Time-Marching for Time-Dependent PDEs}
+For long-time simulations of time-dependent PDEs, the method employs a block time-marching strategy:
+
+\begin{enumerate}
+    \item The spatial-temporal domain is divided into windows or "time blocks" along the temporal direction
+    
+    \item The PDE is solved on each time block separately and successively 
+    
+    \item The solution from one time block at the final time instant serves as the initial condition for the next time block
+    
+    \item Each time block uses its own set of local neural networks
+\end{enumerate}
+
+This strategy significantly improves training for long-time simulations, especially for nonlinear PDEs, where solving over the entire temporal domain at once would be challenging or impossible.
+
+\subsection{Algorithm for Nonlinear PDEs}
+For nonlinear PDEs, the process is similar, but two methods are proposed for solving the resulting nonlinear system:
+
+\begin{enumerate}
+    \item \textbf{NLSQ-perturb} (Nonlinear Least Squares with Perturbations):
+    \begin{itemize}
+        \item Uses nonlinear least squares optimization
+        \item Incorporates random perturbations to avoid local minima when needed
+        \item Generally produces more accurate results but is computationally more expensive
+    \end{itemize}
+    
+    \item \textbf{Newton-LLSQ} (Newton-Linear Least Squares):
+    \begin{itemize}
+        \item Linearizes the PDE using Newton's method
+        \item Solves for the increment field using linear least squares
+        \item Computationally faster but typically less accurate than NLSQ-perturb
+    \end{itemize}
+\end{enumerate}
+
+The NLSQ-perturb method is particularly important for preventing the algorithm from being trapped in local minima, especially in under-resolved cases and long-time simulations.
+
+\section{Theoretical Findings}
+
+\subsection{Convergence Properties}
+The locELM method exhibits several notable convergence properties:
+
+\begin{itemize}
+    \item \textbf{Exponential convergence}: Numerical errors typically decrease exponentially or nearly exponentially as:
+    \begin{itemize}
+        \item The number of sub-domains increases
+        \item The number of collocation points per sub-domain increases
+        \item The number of training parameters per sub-domain increases
+    \end{itemize}
+    
+    \item \textbf{Effect of random coefficients}: The accuracy is influenced by $R_m$, the maximum magnitude of random coefficients
+    \begin{itemize}
+        \item Very large or very small values of $R_m$ adversely affect accuracy
+        \item Optimal accuracy is achieved with a moderate range of $R_m$ values (typically around $R_m \approx 1-10$)
+        \item The optimal range expands and shifts as simulation resolution increases
+    \end{itemize}
+\end{itemize}
+
+\subsection{Domain Decomposition Benefits}
+The use of domain decomposition with local neural networks provides significant benefits:
+
+\begin{itemize}
+    \item \textbf{Reduced computational cost}: With the same total degrees of freedom, increasing the number of sub-domains significantly reduces training time
+    
+    \item \textbf{Sparse coefficient matrix}: The locELM approach creates a sparse coefficient matrix in the least squares problem, as only neighboring sub-domains are coupled
+    
+    \item \textbf{Maintained accuracy}: The accuracy with multiple sub-domains is comparable to (and sometimes better than) using a single global domain with the same total degrees of freedom
+\end{itemize}
+
+\subsection{Multiple Hidden Layers}
+Unlike traditional ELM methods that are limited to a single hidden layer, the locELM approach allows multiple hidden layers in each local neural network:
+
+\begin{itemize}
+    \item Local networks with 1-3 hidden layers have been successfully tested
+    \item Using more than one hidden layer can produce accurate results with appropriate settings
+    \item Increasing beyond three hidden layers tends to make accurate results harder to achieve
+\end{itemize}
+
+\section{Numerical Examples and Results}
+
+The authors conducted extensive numerical experiments with various PDEs to demonstrate the performance of the locELM method.
+
+\subsection{Linear PDEs}
+
+\subsubsection{Helmholtz Equation (1D)}
+\begin{equation}
+    \frac{d^2u}{dx^2} - \lambda u = f(x)
+\end{equation}
+
+Key findings:
+\begin{itemize}
+    \item Error decreased from $\sim 10^1$ with a single sub-domain to $\sim 10^{-7}$ with 8 sub-domains
+    \item Exponential decrease in errors with increasing collocation points and training parameters
+    \item Quadrature-point distribution of collocation points produced more accurate results than uniform distribution, which in turn was more accurate than random distribution
+\end{itemize}
+
+\subsubsection{Advection Equation (1D + time)}
+\begin{equation}
+    \frac{\partial u}{\partial t} - c\frac{\partial u}{\partial x} = 0
+\end{equation}
+
+Key findings:
+\begin{itemize}
+    \item Successfully performed long-time simulations (up to 100 time units, approximately 40 periods)
+    \item Block time-marching was crucial for long-time accuracy
+    \item Training time with 4 sub-domains per time block was less than half that of a single sub-domain
+\end{itemize}
+
+\subsubsection{Diffusion Equation (1D/2D + time)}
+\begin{equation}
+    \frac{\partial u}{\partial t} - \nu \frac{\partial^2 u}{\partial x^2} = f(x,t)
+\end{equation}
+
+Key findings:
+\begin{itemize}
+    \item Errors decreased from $\sim 10^{-1}$ with one sub-domain to $\sim 10^{-8}$ with 5 sub-domains
+    \item Successfully extended to 2D spatial problems plus time
+    \item Achieved error levels of $\sim 10^{-6}$ for the 2D+time case
+\end{itemize}
+
+\subsection{Nonlinear PDEs}
+
+\subsubsection{Nonlinear Helmholtz Equation (1D)}
+\begin{equation}
+    \frac{d^2u}{dx^2} - \lambda u + \beta \sin(u) = f(x)
+\end{equation}
+
+Key findings:
+\begin{itemize}
+    \item NLSQ-perturb achieved error levels of $\sim 10^{-12}$ to $10^{-9}$
+    \item Newton-LLSQ achieved error levels of $\sim 10^{-9}$ to $10^{-5}$
+    \item Newton-LLSQ was generally faster but less accurate than NLSQ-perturb
+\end{itemize}
+
+\subsubsection{Nonlinear Spring Equation (time only)}
+\begin{equation}
+    \frac{d^2u}{dt^2} + \omega^2 u + \alpha \sin(u) = f(t)
+\end{equation}
+
+Key findings:
+\begin{itemize}
+    \item Successfully performed long-time simulations (up to 100 time units)
+    \item Achieved error levels of $\sim 10^{-8}$ with block time-marching
+    \item Exponential decrease in errors with increasing collocation points (until saturation)
+\end{itemize}
+
+\subsubsection{Viscous Burger's Equation (1D + time)}
+\begin{equation}
+    \frac{\partial u}{\partial t} + u\frac{\partial u}{\partial x} = \nu \frac{\partial^2 u}{\partial x^2} + f(x,t)
+\end{equation}
+
+Key findings:
+\begin{itemize}
+    \item Achieved error levels of $\sim 10^{-8}$ to $10^{-7}$ with NLSQ-perturb
+    \item Block time-marching essential for accurate long-time simulations
+    \item Error decreased approximately exponentially with increasing collocation points
+\end{itemize}
+
+\subsection{Comparative Performance Analysis}
+
+\subsubsection{Comparison with DGM and PINN}
+The locELM method demonstrated clear superiority over DGM and PINN:
+
+\begin{itemize}
+    \item \textbf{Accuracy}: 
+    \begin{itemize}
+        \item For the 1D Helmholtz equation: locELM errors ($\sim 10^{-9}$) were about 5 orders of magnitude smaller than DGM/PINN errors ($\sim 10^{-4}$)
+        \item For the 1D diffusion equation: locELM errors ($\sim 10^{-8}$) were about 5 orders of magnitude smaller than DGM/PINN errors ($\sim 10^{-3}$)
+        \item For the nonlinear spring: locELM errors ($\sim 10^{-11}$) were about 6 orders of magnitude smaller than PINN errors ($\sim 10^{-5}$)
+        \item For the Burger's equation: locELM errors ($\sim 10^{-8}$) were about 5 orders of magnitude smaller than DGM/PINN errors ($\sim 10^{-3}$)
+    \end{itemize}
+    
+    \item \textbf{Computational cost}:
+    \begin{itemize}
+        \item For the 1D Helmholtz equation: locELM training time (1.1 seconds) was about 1000 times faster than PINN training time (1035.8 seconds)
+        \item For the 1D diffusion equation: locELM training time (28.4 seconds) was about 100 times faster than PINN training time (3174.4 seconds)
+        \item For Burger's equation: locELM training time (27.6 seconds) was about 65 times faster than DGM training time (1813.5 seconds)
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Comparison with Finite Element Method (FEM)}
+The locELM method was competitive with or superior to classical FEM:
+
+\begin{itemize}
+    \item \textbf{Similar accuracy-cost performance}:
+    \begin{itemize}
+        \item For the 1D Helmholtz equation: locELM with 4 sub-domains and 100 collocation points achieved higher accuracy than FEM with 100,000 elements in comparable computation time
+        \item For the 1D diffusion equation: locELM with 5 sub-domains achieved about 3 orders of magnitude better accuracy than FEM with similar computational cost
+        \item For Burger's equation: locELM with NLSQ-perturb achieved 3 orders of magnitude better accuracy than FEM with comparable computational cost
+    \end{itemize}
+    
+    \item \textbf{Qualitatively different convergence behavior}:
+    \begin{itemize}
+        \item FEM showed algebraic convergence (second-order for linear elements)
+        \item locELM exhibited exponential convergence until reaching a saturation point
+        \item For higher-order FEM (degree 3-4 Lagrange elements), locELM remained competitive but not consistently superior
+    \end{itemize}
+\end{itemize}
+
+\section{Implications and Advantages}
+
+The locELM method offers several significant advantages:
+
+\begin{enumerate}
+    \item \textbf{Superior accuracy}: Achieves exponential convergence and significantly higher accuracy than DNN-based PDE solvers
+    
+    \item \textbf{Computational efficiency}: Requires orders of magnitude less training time than traditional DNN-based methods and is competitive with classical numerical methods
+    
+    \item \textbf{Enhanced trainability}: The domain decomposition approach leads to sparser coefficient matrices and better trainability, especially for complex problems
+    
+    \item \textbf{Long-time simulation capability}: The block time-marching strategy enables accurate long-time simulations of time-dependent PDEs
+    
+    \item \textbf{Versatility}: Successfully handles both linear and nonlinear, stationary and time-dependent PDEs in multiple dimensions
+\end{enumerate}
+
+The method provides evidence that neural network-based approaches can be competitive with or even outperform traditional numerical methods for solving PDEs. The superior performance of locELM compared to DGM and PINN suggests that:
+
+\begin{itemize}
+    \item Pre-setting random weights in hidden layers and only training output layer weights can be more effective than training all network parameters
+    
+    \item Domain decomposition with local neural networks offers significant advantages over global networks
+    
+    \item Linear/nonlinear least squares training is computationally more efficient than gradient descent-based training for PDE problems
+\end{itemize}
+
+The locELM approach represents a significant step toward making neural network-based methods truly competitive in computational science and engineering applications, potentially opening new pathways for solving complex PDEs efficiently and accurately.
+
+\end{document} 

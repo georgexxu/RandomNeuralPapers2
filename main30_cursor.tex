@@ -1,0 +1,185 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{Remark}
+
+\title{ELM-FBPINN: Efficient Finite-Basis Physics-Informed Neural Networks}
+\author{Samuel Anderson, Victorita Dolean, Ben Moseley, and Jennifer Pestana}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+Solving partial differential equations (PDEs) efficiently and accurately is crucial for scientific research. Traditional numerical methods like finite difference (FDM) and finite element methods (FEM) face fundamental trade-offs between accuracy and efficiency. Scientific machine learning has introduced alternative approaches, including physics-informed neural networks (PINNs), which solve boundary value problems of the form:
+
+\begin{align}
+    \mathcal{N}[u(x)] &= f(x), \quad x \in \Omega \subset \mathbb{R}^d, \\
+    \mathcal{B}_k[u(x)] &= g_k(x), \quad x \in \Gamma_k \subset \partial\Omega,
+\end{align}
+
+where $\mathcal{N}[u(x)]$ is a differential operator, $u(x)$ is the problem solution, and $\{\mathcal{B}_k[\cdot]\}$ is a set of $K$ boundary conditions.
+
+PINNs use neural networks $u(x,\boldsymbol{\theta})$ to approximate solutions, where $\boldsymbol{\theta}$ represents network parameters. They are trained using a loss function:
+
+\begin{align}
+    \mathcal{L}(\boldsymbol{\theta}) = \lambda_I \sum_{i=1}^{N_I} \|\mathcal{N}[u(x_i,\boldsymbol{\theta})]-f(x_i)\|^2 + \sum_{k=1}^{K}\lambda_B^{(k)} \sum_{i=1}^{N_B^{(k)}} \|\mathcal{B}_k[u(x_i^{(k)},\boldsymbol{\theta})]-g_k(x_i^{(k)})\|^2
+\end{align}
+
+While PINNs offer advantages such as being mesh-free and easily extendable to inverse problems, they struggle with complex, multi-scale solutions due to spectral bias and super-linear growth of the optimization problem.
+
+Finite basis physics-informed neural networks (FBPINNs) attempt to address these limitations by decomposing the domain into overlapping subdomains and placing separate neural networks in each subdomain. However, FBPINNs remain computationally expensive compared to traditional methods due to their reliance on gradient descent-based optimization.
+
+This paper introduces Extreme Learning Machine Finite Basis Physics-Informed Neural Networks (ELM-FBPINNs), which significantly accelerate the training of FBPINNs by linearizing their underlying optimization problem.
+
+\section{Methodology}
+
+\subsection{Extreme Learning Machines (ELMs)}
+
+An ELM is a neural network where only the weights and biases of the last layer are trained; all other parameters remain fixed as initialized. For a shallow network approximating a function $g(x)$, the ELM approximant is:
+
+\begin{equation}
+    u_{ELM}(x,\mathbf{a}) = \sum_{c=1}^{C} a_c \sigma(\mathbf{w}_c \cdot x + b_c),
+\end{equation}
+
+where $\mathbf{a} = [a_1, \ldots, a_C]^T$ contains the trainable weights of the last layer, while $\mathbf{w}_c$ and $b_c$ are randomly initialized and fixed. Given collocation points $\{x_i\}_{i=1}^N$, the ELM is trained by minimizing:
+
+\begin{equation}
+    \mathcal{L}(\mathbf{a}) = \frac{1}{2} \sum_{i=1}^{N} \|u_{ELM}(x_i,\mathbf{a}) - g(x_i)\|^2,
+\end{equation}
+
+which is equivalent to solving the least-squares problem:
+
+\begin{equation}
+    \min_{\mathbf{a} \in \mathbb{R}^C} \frac{1}{2} \|M\mathbf{a} - \mathbf{b}\|_2^2,
+\end{equation}
+
+where $M$ is the matrix of basis function evaluations at collocation points and $\mathbf{b}$ contains the function values at those points.
+
+The ELM algorithm consists of three steps:
+\begin{enumerate}
+    \item Randomly assign input weights $\mathbf{w}_c$ and biases $b_c$ for $c=1,\ldots,C$.
+    \item Calculate the hidden layer output matrix $M$.
+    \item Calculate the output weight vector $\mathbf{a}$ by solving the least-squares problem.
+\end{enumerate}
+
+\subsection{ELM-FBPINN Method}
+
+The ELM-FBPINN method replaces the subdomain networks in FBPINNs with ELMs to solve PDEs. The domain $\Omega$ is decomposed into $J$ overlapping subdomains $\Omega = \cup_{j=1}^J \Omega_j$, with an ELM placed in each subdomain. The global solution is given by:
+
+\begin{equation}
+    u(x,\mathbf{a}) = \sum_{j=1}^{J} \omega_j(x) \sum_{c=1}^{C} a_{j,c} \sigma(\mathbf{w}_{j,c} \cdot x + b_{j,c}),
+\end{equation}
+
+where $\omega_j(x)$ are window functions that confine each subdomain network to its subdomain and typically obey a partition of unity ($\sum_{j=1}^{J} \omega_j \equiv 1$ on $\Omega$).
+
+The ELM-FBPINN is trained using the loss function:
+
+\begin{align}
+    \mathcal{L}(\mathbf{a}) = \frac{1}{2} \sum_{i=1}^{N_I} \lambda_I^{(i)} \|\mathcal{N}[u(x_i,\mathbf{a})]-f(x_i)\|^2 + \frac{1}{4} \sum_{k=1}^{K} \sum_{i=1}^{N_B^{(k)}} \lambda_B^{(i,k)} \|\mathcal{B}_k[u(x_i^{(k)},\mathbf{a})]-g_k(x_i^{(k)})\|^2
+\end{align}
+
+Assuming that $\mathcal{N}$ and $\mathcal{B}$ are linear operators, this can be reformulated as a least-squares problem:
+
+\begin{equation}
+    \min_{\mathbf{a} \in \mathbb{R}^{CJ}} \frac{1}{2} \|D_I(M\mathbf{a}-\mathbf{c})\|_2^2 + \frac{1}{4} \|D_B(B\mathbf{a}-\mathbf{g})\|_2^2,
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $\mathbf{c} = \{f(x_n)\}_{n=1}^{N_I}$ contains evaluations of the PDE right-hand side
+    \item $\mathbf{g} = \{g_p\}_{p=1}^{N_B}$ contains evaluations of boundary condition right-hand sides
+    \item $\mathbf{a} = \{a_\ell\}_{\ell=1}^{JC}$ contains the weights of all subdomain ELMs
+    \item $M = \{m_{n,\ell}\}$ where $m_{n,\ell} = \mathcal{N}[(\omega_j\Psi_{j,c})(x_n)]$
+    \item $B = \{b_{p,\ell}\}$ where $b_{p,\ell} = \mathcal{B}_k[(\omega_j\Psi_{j,c})(x_i^{(k)})]$
+    \item $D_I$ and $D_B$ are scaling matrices that ensure the maximum element in each row of $D_I M$ and $D_B B$ has magnitude 1
+\end{itemize}
+
+The window functions make the matrices $M$ and $B$ sparse, which can be exploited for computational efficiency.
+
+\section{Theoretical Properties}
+
+The ELM-FBPINN approach offers several theoretical advantages:
+
+\begin{enumerate}
+    \item \textbf{Linearization of Optimization}: By using ELMs as subdomain networks, the non-convex optimization problem in traditional FBPINNs is transformed into a linear least-squares problem, which can be solved much more efficiently.
+    
+    \item \textbf{Bounded Condition Number}: Numerical evidence suggests that the condition number of the matrix in the least-squares problem remains relatively stable as the number of subdomains increases, indicating that larger problems do not become significantly more challenging to solve.
+    
+    \item \textbf{Domain Decomposition Benefits}: The domain decomposition approach helps mitigate the spectral bias problem that affects standard PINNs, allowing the method to better capture high-frequency components of the solution.
+\end{enumerate}
+
+The method combines the approximation capabilities of FBPINNs with the computational efficiency of solving linear systems.
+
+\section{Numerical Examples and Results}
+
+The paper demonstrates the ELM-FBPINN method on a one-dimensional damped harmonic oscillator problem:
+
+\begin{align}
+    m\frac{d^2u}{dt^2} + \mu\frac{du}{dt} + ku(t) &= 0, \quad t \in (0,1], \\
+    u(0) &= 1, \\
+    \frac{du}{dt}(0) &= 0,
+\end{align}
+
+where $m$ is the mass, $\mu$ is the friction coefficient, and $k$ is the spring constant. The under-damped case is considered, with $m=1$, $\omega_0=80$, and $\delta=2$, where $\delta = \frac{\mu}{2m}$ and $\omega_0 = \sqrt{\frac{k}{m}}$.
+
+The exact solution for this problem is $u_{exact}(t) = e^{-\delta t}(2A\cos(\phi+\omega t))$ with $\omega = \sqrt{\omega_0^2-\delta^2}$, $A = \frac{1}{2\cos(\phi)}$, and $\phi = \arctan(-\frac{\delta}{\omega})$.
+
+The experimental setup included:
+\begin{itemize}
+    \item 150 collocation points for training
+    \item 300 evenly spaced test points on $[0,1]$
+    \item 20 equally spaced subdomains with width 0.19 for ELM-FBPINN and FBPINN
+    \item 32 neurons per subdomain for FBPINN
+    \item 32 basis functions per subdomain for ELM-FBPINN
+    \item Two hidden layers with 64 neurons each for PINN
+    \item Sine activation functions for all models
+    \item Adam optimizer with learning rate 0.001 for 20,000 training steps for FBPINN and PINN
+\end{itemize}
+
+The results demonstrate that:
+
+\begin{enumerate}
+    \item \textbf{Accuracy Comparison}: Both FBPINN and ELM-FBPINN approximated the solution well, with final $L^1$ losses of 0.00311 and 0.00587, respectively. The standard PINN performed poorly (final loss 0.226) due to spectral bias affecting its ability to capture high-frequency components.
+    
+    \item \textbf{Convergence Time}: The ELM-FBPINN achieved a solution with precision comparable to the FBPINN but in a fraction of the time. While the FBPINN required many iterations of gradient descent, the ELM-FBPINN only needed to solve a linear system once.
+    
+    \item \textbf{Condition Number Analysis}: As the number of subdomains increased from 5 to 25, the condition number of the ELM-FBPINN matrix remained relatively stable. This suggests that the method can scale to larger problems without significant degradation in the conditioning of the linear system.
+\end{enumerate}
+
+\section{Implications and Advantages}
+
+The ELM-FBPINN method offers several significant advantages:
+
+\begin{enumerate}
+    \item \textbf{Computational Efficiency}: By transforming the non-convex optimization problem into a linear least-squares problem, ELM-FBPINN achieves orders of magnitude faster training times compared to standard FBPINNs.
+    
+    \item \textbf{Comparable Accuracy}: Despite the simplification of using ELMs with fixed random parameters in the hidden layers, the method maintains accuracy comparable to fully-trained FBPINNs.
+    
+    \item \textbf{Scalability}: The stable condition number as the number of subdomains increases suggests good scalability to larger problems.
+    
+    \item \textbf{Mitigation of Spectral Bias}: The domain decomposition approach helps address the spectral bias issue that plagues standard PINNs, allowing the method to better capture high-frequency components of solutions.
+    
+    \item \textbf{Matrix Sparsity}: The window functions introduce sparsity in the system matrices, which can be exploited for computational efficiency, particularly in higher-dimensional problems.
+\end{enumerate}
+
+The ELM-FBPINN approach represents a significant step toward making physics-informed neural networks computationally competitive with traditional numerical methods while maintaining their flexibility and accuracy.
+
+Future research directions include:
+\begin{itemize}
+    \item Investigating optimal strategies for initializing the untrained weights and biases in the ELM
+    \item Extending the method to more challenging problems in higher dimensions
+    \item Exploring adaptive domain decomposition strategies
+    \item Developing efficient preconditioners for the resulting linear systems
+\end{itemize}
+
+\end{document} 

@@ -1,0 +1,276 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+
+\title{Randomized Neural Network with Petrov-Galerkin Methods for Solving Linear and Nonlinear Partial Differential Equations}
+\author{Summary of Shang, Wang, and Sun (2023)}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+This paper presents a novel numerical method called Randomized Neural Network with Petrov-Galerkin methods (RNN-PG) for solving partial differential equations (PDEs). The method combines the approximation power of neural networks with the mathematical foundation of the Petrov-Galerkin framework. RNN-PG addresses key limitations of both traditional numerical methods and existing deep learning approaches for PDEs by:
+
+\begin{itemize}
+    \item Using randomized neural networks where only the weights of the output layer need to be trained, significantly reducing computational complexity
+    \item Employing the Petrov-Galerkin framework with flexible test function spaces
+    \item Using least-squares methods to solve the resulting linear system, avoiding the need to satisfy the discrete inf-sup condition
+    \item Handling boundary conditions effectively without penalty methods
+    \item Adopting a space-time approach for time-dependent problems
+\end{itemize}
+
+\section{Algorithm Description}
+
+\subsection{Problem Formulation}
+
+The RNN-PG method addresses PDEs of the form:
+\begin{align}
+Au &= f \quad \textrm{in } \Omega, \\
+Bu &= g \quad \textrm{on } \Gamma,
+\end{align}
+where $\Omega$ is a bounded domain in $\mathbb{R}^d$ with boundary $\Gamma = \Gamma_D \cup \Gamma_N$, $\Gamma_D \cap \Gamma_N = \emptyset$. The differential operator $A$ can represent various PDEs, including diffusion-reaction equations:
+\begin{equation}
+A := -\nabla \cdot(\alpha(x)\nabla) + \delta(x),
+\end{equation}
+where $\alpha_1 > \alpha(x) \geq \alpha_0 > 0$ and $\delta_1 \geq \delta(x) \geq \delta_0 > 0$. Boundary conditions can be Dirichlet, Neumann, or Robin types.
+
+\subsection{Petrov-Galerkin Framework}
+
+The weak formulation of the PDE is: Find $u \in U_{D,g_D} = \{u \in U; u|_{\Gamma_D} = g_D\}$ such that
+\begin{equation}
+a(u, v) = l(v) \quad \forall v \in V_{D,0} = \{v \in V; v|_{\Gamma_D} = 0\},
+\end{equation}
+where $U$ and $V$ are Hilbert spaces, and $a(\cdot,\cdot): U \times V \rightarrow \mathbb{R}$ is a continuous bilinear form.
+
+The traditional Petrov-Galerkin method approximates the solution by finding $u_h \in U_h \subset U_{D,g_D}$ such that
+\begin{equation}
+a(u_h, v_h) = l(v_h) \quad \forall v_h \in V_h \subset V_{D,0},
+\end{equation}
+where $U_h$ and $V_h$ are finite-dimensional function spaces, typically consisting of piecewise polynomial functions.
+
+\subsection{Randomized Neural Network Structure}
+
+The RNN-PG method replaces the trial function space $U_h$ with a neural network space $U_\rho$. The neural network used has the form:
+
+For a fully connected network with depth $D$:
+\begin{align}
+\Phi_0(x) &= x, \\
+\Phi_l(x) &= \rho(W_l\Phi_{l-1} + b_l) \quad \text{for } l = 1, \ldots, D-1, \\
+\Phi(x) &= \Phi_D(x) = W_D\Phi_{D-1} + b_D,
+\end{align}
+where $\rho$ is the activation function, $W_l$ are weight matrices, and $b_l$ are bias vectors.
+
+The key innovation is that the weights and biases for all hidden layers ($l = 1, \ldots, D-1$) are randomly initialized and then fixed. Only the weights of the output layer ($W_D$) are trainable parameters. 
+
+If $\Phi_j^{D-1}$ denotes the output of the $j$-th neuron in the $(D-1)$ layer, the neural network output is:
+\begin{equation}
+u_\rho(x) = \sum_{j=1}^{n_{D-1}} u_\rho^j \Phi_j^u(x),
+\end{equation}
+where $\Phi_j^u := \Phi_j^{D-1}$ and $u_\rho^j := w_{1j}^D$. The degrees of freedom for the RNN-PG method is the number of neurons in the $(D-1)$ layer, i.e., $n_{D-1}$.
+
+\subsection{RNN-PG Algorithm}
+
+The RNN-PG method solves: Find $u_\rho \in U_\rho \subset N_\rho(D, M_D, B_D) \subset U$ such that
+\begin{align}
+a(u_\rho, v_h) &= l(v_h) \quad \forall v_h \in V_h \subset V_{D,0}, \\
+u_\rho(x_k) &= g_D(x_k) \quad \text{for points } x_k \in \Gamma_D, k = 1, 2, \ldots, N_b,
+\end{align}
+
+The algorithm can be summarized as follows:
+
+\begin{enumerate}
+    \item Initialize neural network architecture $u_\rho: \Omega \rightarrow \mathbb{R}$ with depth $D$
+    \item Fix the parameters of all layers except the last layer and rewrite $u_\rho$ as a linear combination of basis functions
+    \item Choose test functions $v_i \in V_h$ and assemble the linear system $AU = L$
+    \item Sample random points on the Dirichlet boundary and impose boundary conditions, leading to $BU = G$
+    \item Solve the least-squares problem with the combined linear system $\begin{bmatrix} A \\ B \end{bmatrix} U = \begin{bmatrix} L \\ G \end{bmatrix}$
+    \item Update the output layer parameters of $u_\rho$
+\end{enumerate}
+
+\subsection{Mixed RNN-PG Methods}
+
+The paper also introduces Mixed RNN-PG (M-RNN-PG) methods that approximate multiple unknown functions simultaneously. For example, for the Poisson equation, the mixed formulation introduces an auxiliary variable $p = \nabla u$, resulting in a first-order system:
+\begin{align}
+p - \nabla u &= 0 \quad \text{in } \Omega, \\
+-\nabla \cdot p &= f \quad \text{in } \Omega.
+\end{align}
+
+Different mixed formulations are presented, each with specific advantages. For implementation, each unknown function ($u$ and $p$) is approximated with its own neural network, and the resulting system is solved using the least-squares method.
+
+\subsection{Space-Time RNN-PG for Time-Dependent Problems}
+
+For time-dependent problems, the RNN-PG method employs a space-time approach, treating temporal and spatial variables jointly and equally. For example, for the heat equation:
+\begin{align}
+\frac{\partial u}{\partial t} - \nabla \cdot(\alpha(x)\nabla u) &= f \quad \text{in } \Omega \times I, \\
+u(x,t) &= g_D(x,t) \quad \text{on } \Gamma_D \times I, \\
+\alpha(x)\nabla u(x,t) \cdot n &= g_N(x,t) \quad \text{on } \Gamma_N \times I, \\
+u(x,0) &= h_0(x) \quad \text{in } \Omega,
+\end{align}
+where $I = (0,T)$ is the time interval.
+
+The RNN-PG method treats this as a higher-dimensional problem in $\Omega \times I$. The initial condition becomes another boundary condition on $\Omega \times \{0\}$. The weak formulation and neural network construction are similar to the stationary case, but with input dimension $n_0 = d+1$ to account for both spatial and temporal variables.
+
+For nonlinear time-dependent problems like Burger's equation, the method employs nonlinear iteration techniques such as Picard iteration or Newton's method in conjunction with the space-time approach.
+
+\section{Theoretical Findings}
+
+\subsection{Universal Approximation Properties}
+
+The paper leverages the theoretical foundation that neural networks with continuous, non-polynomial activation functions can uniformly approximate any continuous function on a compact domain. Specifically, the work references the following theorem:
+
+\begin{theorem}
+Given $p \geq 1$, $s,k,d \in \mathbb{N}^+$, $s \geq k+1$. Let $\rho$ be the logistic function $\frac{1}{1+e^{-x}}$ or tanh function $\frac{e^x - e^{-x}}{e^x + e^{-x}}$. Denote $F_{s,p,d} := \{f \in W^{s,p}([0,1]^d): \|f\|_{W^{s,p}([0,1]^d)} \leq 1\}$. For any $\epsilon > 0$ and $f \in F_{s,p,d}$, there exists a neural network $f_\rho \in N_\rho(D, M_D, B_D)$ with depth $D \leq C\log(d+s)$, $M_D \leq C \cdot \epsilon^{-d/s-k-\mu_k}$, and $B_D \leq C \cdot \epsilon^{-\theta}$ such that
+\begin{equation}
+\|f - f_\rho\|_{W^{k,p}([0,1]^d)} \leq \epsilon,
+\end{equation}
+where $C$, $\theta$ are constants depending on $d$, $s$, $p$, $k$; $\mu$ is an arbitrarily small positive number.
+\end{theorem}
+
+This theorem establishes that PDE solutions can be efficiently approximated by neural networks with an adequate number of layers and nonzero weights.
+
+\subsection{Independence from Inf-Sup Condition}
+
+A significant theoretical advantage of the RNN-PG method is its independence from the inf-sup condition. Traditional Petrov-Galerkin methods require careful design of the finite element pair $U_h$ and $V_h$ to satisfy the discrete inf-sup condition:
+\begin{equation}
+\inf_{u_h \in U_h} \sup_{v_h \in V_h} \frac{a(u_h, v_h)}{\|u_h\|_U \|v_h\|_V} = \inf_{v_h \in V_h} \sup_{u_h \in U_h} \frac{a(u_h, v_h)}{\|u_h\|_U \|v_h\|_V} = \beta_h > 0,
+\end{equation}
+
+By using the least-squares method to solve the resulting linear system, the RNN-PG method avoids this constraint, making it more flexible in the choice of test functions. This is particularly advantageous for the Mixed RNN-PG method, where traditional approaches would require carefully chosen function spaces to satisfy the LBB condition.
+
+\subsection{Error Dependency}
+
+The paper establishes that the error between the neural network solution $u_\rho$ and the exact solution $u$ depends on:
+\begin{itemize}
+    \item The approximation ability of the function space $U_\rho$
+    \item The choice of test function space $V_h$
+    \item The collocation points on the Dirichlet boundary
+\end{itemize}
+
+Numerical experiments demonstrate that the accuracy of the RNN-PG method improves with:
+\begin{itemize}
+    \item Larger number of neurons in the hidden layers (DoF)
+    \item More test functions (finer mesh)
+    \item Deeper neural networks
+    \item More collocation points for boundary conditions
+\end{itemize}
+
+\section{Numerical Examples and Results}
+
+The paper demonstrates the efficacy of the RNN-PG method through several numerical examples:
+
+\subsection{Poisson Equation}
+
+A 2D Poisson equation with mixed boundary conditions and a smooth solution $u = \cos(\pi x)\sin(\pi y)$ was solved. The RNN-PG method achieved very high accuracy with a small number of degrees of freedom:
+\begin{itemize}
+    \item With mesh size $h = 2^{-5}$ and DoF = 200, the relative $L^2$ error was $9.651 \times 10^{-10}$ and the $H^1$ error was $5.167 \times 10^{-9}$
+    \item Compared to finite element methods (FEM), RNN-PG achieved significantly better accuracy with far fewer degrees of freedom
+    \item A cubic FEM ($P_3$) with 9215 DoF had errors of $1.495 \times 10^{-7}$ and $1.125 \times 10^{-5}$, while RNN-PG with only 200 DoF achieved better accuracy
+\end{itemize}
+
+The authors also compared the performance of RNN-PG with different types of test functions (piecewise bilinear functions, neural networks, Legendre polynomials, and Chebyshev polynomials), showing that piecewise bilinear functions resulted in better conditioning of the linear system.
+
+\subsection{Heat Equation}
+
+A 2D heat equation with an exact solution $u(x,y,t) = 2e^{-t}\sin(\pi x/2)\sin(\pi y/2)$ was solved using the space-time approach. The RNN-PG method treated this as a 3D problem (2D spatial + 1D temporal) and achieved excellent results:
+
+\begin{itemize}
+    \item With mesh size $h = 2^{-4}$ and DoF = 800, the $L^2$ error at time $t = 1$ was $9.499 \times 10^{-10}$ and the $H^1$ error was $1.635 \times 10^{-8}$
+    \item Compared to the combination of $P_2$ FEM for spatial discretization and backward Euler for temporal discretization, RNN-PG achieved much higher accuracy with fewer computational resources
+    \item The RNN-PG method required no time-stepping, avoiding error accumulation issues
+\end{itemize}
+
+\subsection{Wave Equation}
+
+A 2D wave equation with exact solution $u(x,y,t) = \sin(\pi x/2)\sin(\pi y/2)\sin(\pi t/2)$ was solved. The space-time RNN-PG method achieved excellent results:
+\begin{itemize}
+    \item With mesh size $h = 2^{-4}$ and DoF = 800, the $L^2$ error at time $t = 1$ was $1.395 \times 10^{-9}$ and the $H^1$ error was $4.394 \times 10^{-8}$
+\end{itemize}
+
+\subsection{Advection-Diffusion Equation}
+
+A 1D advection-diffusion equation was treated as a 2D space-time problem. The RNN-PG method outperformed the hp-VPINN method (Variational Physics-Informed Neural Networks with hp-refinement):
+\begin{itemize}
+    \item RNN-PG with DoF = 400 achieved higher accuracy than hp-VPINN with 1296 training parameters
+    \item RNN-PG satisfied boundary and initial conditions exactly without penalty parameters
+\end{itemize}
+
+\subsection{Burger's Equation}
+
+A 2D nonlinear Burger's equation with exact solution $u(x,y,t) = 1/(1+e^{(x+y-t)/(2\epsilon)})$ was solved for different values of $\epsilon$:
+
+\begin{itemize}
+    \item For $\epsilon = 1$, $h = 2^{-3}$, DoF = 400, the RNN-PG method achieved $L^2$ error of $1.335 \times 10^{-8}$ and $H^1$ error of $1.012 \times 10^{-7}$ at time $t = 1$ after three Newton iterations
+    \item For $\epsilon = 0.1$ (sharper solution profiles), the method still performed well with $L^2$ error of $5.193 \times 10^{-3}$
+    \item Compared to PINNs, RNN-PG was significantly more accurate and required fewer iterations
+\end{itemize}
+
+\subsection{High-Dimensional Heat Equation}
+
+A high-dimensional heat equation with exact solution $u = \|x\|^2_d + 2t$ was solved for dimensions $d = 5, 10, 20$:
+
+\begin{itemize}
+    \item For $d = 5$ with DoF = 3200, the $L^2$ error was $8.529 \times 10^{-7}$ with runtime of 10.28 seconds
+    \item For $d = 10$ with DoF = 3200, the $L^2$ error was $2.710 \times 10^{-6}$ with runtime of 12.42 seconds
+    \item For $d = 20$ with DoF = 3200, the $L^2$ error was $5.396 \times 10^{-5}$ with runtime of 15.50 seconds
+    \item The method outperformed PINNs in both efficiency and accuracy
+\end{itemize}
+
+\section{Implications and Advantages}
+
+The RNN-PG method offers several significant advantages over both traditional numerical methods and existing neural network-based approaches:
+
+\subsection{Computational Efficiency}
+
+\begin{itemize}
+    \item By only training the output layer weights, RNN-PG dramatically reduces the number of trainable parameters
+    \item The method converts the PDE solution process into solving a linear system, avoiding the difficulties of training deep neural networks with optimization methods
+    \item For time-dependent problems, the space-time approach eliminates the need for time-stepping, reducing computational cost and avoiding error accumulation
+    \item The method shows nearly linear scaling with the number of collocation points and training parameters
+    \item Runtime for high-dimensional problems is significantly faster than other methods (e.g., solving a 20D problem in just 15.5 seconds)
+\end{itemize}
+
+\subsection{Accuracy and Approximation Power}
+
+\begin{itemize}
+    \item RNN-PG achieves extremely high accuracy with very few degrees of freedom compared to traditional FEM
+    \item The method maintains high accuracy even for problems with complex solutions and high dimensions
+    \item For the examples tested, the method achieves errors on the order of $10^{-8}$ to $10^{-10}$ for many problems, far superior to what is typically achieved with PINNs
+    \item Neural networks provide excellent approximation power for smooth solutions, and the RNN-PG method effectively leverages this property
+\end{itemize}
+
+\subsection{Flexibility in Implementation}
+
+\begin{itemize}
+    \item The method is mesh-free, eliminating the need for complex mesh generation
+    \item It handles different boundary conditions easily within the same framework
+    \item The choice of test functions is flexible, allowing for adaptation to problem characteristics
+    \item Mixed formulations can be implemented straightforwardly without concerns about the inf-sup condition
+    \item The method can be applied to both linear and nonlinear problems, stationary and time-dependent
+\end{itemize}
+
+\subsection{Scalability to High Dimensions}
+
+\begin{itemize}
+    \item RNN-PG effectively addresses the "curse of dimensionality" that limits traditional PDE solvers
+    \item The method maintains good performance even for 20-dimensional problems
+    \item By using randomized neural networks and the space-time approach, the method remains computationally tractable for high-dimensional problems
+\end{itemize}
+
+\subsection{Potential for Future Development}
+
+The paper identifies several areas for further development:
+\begin{itemize}
+    \item Designing randomized neural networks to better capture features of exact solutions
+    \item Using domain decomposition with different neural networks in different subdomains
+    \item Developing preconditioners to improve the conditioning of the linear system
+    \item Implementing adaptive refinement strategies
+    \item Parallelizing the algorithm for large-scale problems
+\end{itemize}
+
+\end{document} 

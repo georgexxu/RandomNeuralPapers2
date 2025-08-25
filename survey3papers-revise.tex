@@ -1,0 +1,104 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage{hyperref}
+\geometry{margin=1in}
+\title{Survey of Randomized Neural Network Methods for Solving Partial Differential Equations: A Comparative Review of Three Recent Advances}
+\author{ }
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This survey reviews and compares three recent advances in randomized neural network methods for solving partial differential equations (PDEs): the Extreme Learning Machine (ELM) for high-dimensional PDEs, the Randomized Neural Network with Petrov–Galerkin methods (RNN-PG), and the Local RNN approach for linear elasticity and Navier–Stokes equations. We detail the algorithmic frameworks, theoretical results, and numerical performance of each method, and discuss their implications for scientific machine learning and computational mathematics.
+\end{abstract}
+
+\section{Introduction}
+The numerical solution of partial differential equations (PDEs) is a central problem in computational science and engineering. Traditional mesh-based methods, such as finite element and finite difference methods, face severe challenges in high dimensions due to the curse of dimensionality. Recently, randomized neural network approaches have emerged as promising alternatives, leveraging the universal approximation properties of neural networks and the efficiency of randomization. This survey reviews three representative advances: (1) the Extreme Learning Machine (ELM) for high-dimensional PDEs~[P1], (2) the Randomized Neural Network with Petrov–Galerkin methods (RNN-PG)~[P2], and (3) the Local RNN approach for linear elasticity and Navier–Stokes equations~[P3].
+
+\section{Extreme Learning Machine for High-Dimensional PDEs~[P1]}
+\subsection{Algorithmic Framework}
+The ELM method represents the solution to a PDE as a randomized feed-forward neural network, where hidden-layer parameters are randomly assigned and fixed, and only the output-layer parameters are trained. The PDE and boundary/initial conditions are enforced at random collocation points, leading to a linear or nonlinear least squares problem for the output weights. Two variants are presented:
+\begin{itemize}
+    \item \textbf{ELM}: The solution is approximated by a single-layer randomized neural network. The hidden-layer weights and biases are drawn from a uniform distribution, and the output weights are determined by least squares.
+    \item \textbf{ELM/A-TFC}: Combines ELM with an approximate Theory of Functional Connections (A-TFC) to systematically enforce boundary conditions in high dimensions, avoiding the exponential growth of terms in standard TFC.
+\end{itemize}
+For nonlinear PDEs, a nonlinear least squares solver (Gauss–Newton with trust region) is used. For problems with local features, domain decomposition and local ELMs (locELM) are employed, with continuity conditions enforced across subdomain boundaries.
+
+\subsection{Theoretical Findings}
+ELM-type networks are universal function approximators. Theoretical results show that the expected $L^2$ error for approximating Lipschitz functions decays as $O(1/\sqrt{n})$ with the number of random basis functions $n$, independent of the dimension. This contrasts with deterministic basis methods, where the error decays as $O(n^{-1/d})$, suffering from the curse of dimensionality. The A-TFC variant provides a systematic way to enforce boundary conditions with a manageable number of terms.
+
+\subsection{Numerical Examples and Results}
+The ELM and ELM/A-TFC methods are tested on a variety of high-dimensional linear and nonlinear PDEs, including Poisson, advection-diffusion, Korteweg–de Vries, and heat equations, in up to 20 dimensions. Key findings:
+\begin{itemize}
+    \item Errors decrease quasi-exponentially with the number of trainable parameters and boundary collocation points, and stagnate at a level that increases with dimension.
+    \item Boundary collocation points are more important than interior points in high dimensions.
+    \item ELM outperforms classical finite element methods and PINNs in both accuracy and computational cost for high-dimensional problems.
+    \item The A-TFC variant is slightly more accurate in lower dimensions but more costly.
+\end{itemize}
+
+\subsection{Implications}
+ELM-based methods provide a mesh-free, scalable, and highly accurate approach for high-dimensional PDEs, overcoming the curse of dimensionality in expectation. The approach is particularly effective for problems where boundary conditions can be systematically enforced, and offers significant computational advantages over traditional and PINN-based methods.
+
+\section{Randomized Neural Network with Petrov–Galerkin Methods (RNN-PG)~[P2]}
+\subsection{Algorithmic Framework}
+The RNN-PG method combines randomized neural networks with the Petrov–Galerkin variational principle. The solution is approximated by a neural network with all but the last layer's parameters randomly initialized and fixed. The last layer is trained by solving a least squares problem derived from the weak (variational) form of the PDE, using a flexible choice of test functions (e.g., finite element bases, polynomials, or neural networks). Dirichlet boundary conditions are enforced at random points on the boundary.
+
+The method extends naturally to mixed formulations (for systems with multiple unknowns) and to time-dependent problems via a space–time approach, treating time and space variables jointly.
+
+\subsection{Theoretical Findings}
+The method leverages the universal approximation property of neural networks and the flexibility of the Petrov–Galerkin framework. Theoretical results guarantee that, with sufficient network width and appropriate test functions, the method can approximate solutions to arbitrary accuracy. The use of least squares avoids the need for inf-sup conditions required in classical Petrov–Galerkin methods.
+
+\subsection{Numerical Examples and Results}
+RNN-PG is tested on 1D and 2D Poisson, heat, wave, advection-diffusion, and Burger's equations, as well as high-dimensional heat equations. Highlights include:
+\begin{itemize}
+    \item Achieves highly accurate solutions (relative $L^2$ errors as low as $10^{-10}$) with far fewer degrees of freedom than finite element methods.
+    \item Outperforms PINNs and hp-VPINNs in both accuracy and computational efficiency.
+    \item Flexible in the choice of test functions; finite element bases yield the best conditioning and accuracy.
+    \item Effective for both linear and nonlinear, stationary and time-dependent PDEs, including high-dimensional problems.
+\end{itemize}
+
+\subsection{Implications}
+RNN-PG offers a mesh-free, flexible, and efficient framework for solving a wide range of PDEs. Its ability to handle mixed formulations, time-dependent problems, and high dimensions makes it a strong candidate for scientific machine learning applications. The method's reliance on least squares and randomization simplifies implementation and improves computational efficiency.
+
+\section{Local RNNs for Linear Elasticity and Navier–Stokes Equations~[P3]}
+\subsection{Algorithmic Framework}
+The Local RNN approach extends the RNN-PG framework to complex systems such as linear elasticity and Navier–Stokes equations. The domain is decomposed into subdomains, with a separate randomized neural network assigned to each. Continuity conditions are enforced across subdomain boundaries. The method supports both primal and mixed formulations, and can handle various boundary conditions.
+
+\subsection{Theoretical Findings}
+The approach inherits the universal approximation and convergence properties of the RNN-PG method. The use of local networks allows for efficient handling of local features and sharp gradients, and the domain decomposition mitigates the computational cost for large-scale problems.
+
+\subsection{Numerical Examples and Results}
+The Local RNN method is demonstrated on benchmark problems in linear elasticity and Navier–Stokes equations. Key results:
+\begin{itemize}
+    \item Achieves high accuracy with fewer degrees of freedom compared to traditional methods.
+    \item Handles complex geometries and boundary conditions efficiently.
+    \item Demonstrates scalability to large and high-dimensional problems.
+\end{itemize}
+
+\subsection{Implications}
+The Local RNN approach enables the application of randomized neural network methods to challenging PDE systems in mechanics and fluid dynamics. Its flexibility, scalability, and accuracy make it a promising tool for large-scale scientific computing.
+
+\section{Comparative Discussion}
+All three methods reviewed share the core idea of using randomized neural networks to approximate PDE solutions, with only a subset of parameters trained via least squares. The ELM method is particularly effective for high-dimensional problems, while RNN-PG and its local variant offer greater flexibility in variational formulations and test function choices. The local RNN approach further enhances scalability and adaptability to complex systems.
+
+Compared to traditional mesh-based methods and PINNs, these randomized neural network methods offer:
+\begin{itemize}
+    \item Superior accuracy per degree of freedom
+    \item Mesh-free implementation
+    \item Scalability to high dimensions and large domains
+    \item Flexibility in handling boundary and initial conditions
+\end{itemize}
+
+\section{Conclusion}
+Randomized neural network methods represent a promising direction for scientific machine learning and PDE solvers. The ELM, RNN-PG, and local RNN approaches reviewed here demonstrate strong theoretical foundations, practical efficiency, and broad applicability. Future work may focus on adaptive architectures, improved theoretical analysis, and large-scale parallel implementations.
+
+\section*{References}
+\begin{itemize}
+    \item[[P1]] Y. Wang, S. Dong, ``An extreme learning machine-based method for computational PDEs in higher dimensions,'' Comput. Methods Appl. Mech. Engrg., 2024.
+    \item[[P2]] Y. Shang, F. Wang, J. Sun, ``Randomized neural network with Petrov–Galerkin methods for solving linear and nonlinear partial differential equations,'' Commun. Nonlinear Sci. Numer. Simul., 2023.
+    \item[[P3]] Y. Shang, F. Wang, J. Sun, ``Randomized neural network with Petrov–Galerkin methods for solving linear and nonlinear partial differential equations,'' Commun. Nonlinear Sci. Numer. Simul., 2023.
+\end{itemize}
+
+\end{document} 

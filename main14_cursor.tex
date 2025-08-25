@@ -1,0 +1,319 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+
+\title{Local Randomized Neural Networks with Discontinuous Galerkin Methods for Partial Differential Equations}
+\author{Summary of Sun, Dong, and Wang (2022)}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+This paper introduces novel computational methods that combine local randomized neural networks (LRNN) with discontinuous Galerkin (DG) approaches for solving partial differential equations (PDEs). The key innovation lies in using randomized neural networks where hidden-layer parameters are fixed to randomly assigned values and only output-layer parameters are computed by solving a linear system through least squares. This approach maintains accuracy while significantly improving computational efficiency.
+
+The methods address several limitations of traditional neural network-based approaches:
+\begin{itemize}
+    \item The high computational cost of training fully parameterized neural networks
+    \item Accuracy limitations of physics-informed neural networks
+    \item The difficulty of handling problems with low regularity
+\end{itemize}
+
+The proposed framework introduces three schemes:
+\begin{itemize}
+    \item LRNN-DG: Local randomized neural networks with discontinuous Galerkin
+    \item LRNN-C$^0$DG: Local randomized neural networks with C$^0$ discontinuous Galerkin
+    \item LRNN-C$^1$DG: Local randomized neural networks with C$^1$ discontinuous Galerkin
+\end{itemize}
+
+These methods combine domain decomposition with neural network approximation, using outputs from local neural networks' last hidden layers as basis functions and applying DG formulations to connect them across subdomain boundaries.
+
+\section{Algorithm Description}
+
+\subsection{Randomized Neural Networks Structure}
+
+The randomized neural network structure is defined as follows:
+\begin{itemize}
+    \item Parameters of hidden layers are randomly assigned and fixed during training
+    \item Only the weights for the output layer are trained using a least-squares method
+    \item Single-hidden-layer networks are used with one-dimensional output
+\end{itemize}
+
+The function space for randomized neural networks is defined as:
+\begin{equation}
+M_{RNN}(D) = \left\{U(\beta, \theta, x) = \sum_{j=1}^{M} \beta_j \phi_j^D(x) : x \in D\right\}
+\end{equation}
+where $D \subset \mathbb{R}^n$ is the domain, $M$ is the width of the last hidden layer, $\theta$ represents fixed parameters of hidden layers, $\beta$ represents trainable parameters of the output layer, and $\phi^D_j(x)$ is the output of the last hidden layer.
+
+\subsection{LRNN-DG Method}
+
+Using the Poisson problem as a model:
+\begin{align}
+-\Delta u &= f \quad \text{in } \Omega \\
+u &= g \quad \text{on } \partial\Omega
+\end{align}
+
+The domain is partitioned into subdomains with a local neural network assigned to each. The DG space is defined as:
+\begin{equation}
+V_h = \{v_h \in L^2(\Omega) : v_h|_K \in M_{RNN}(K) \, \forall K \in \mathcal{T}_h\}
+\end{equation}
+where $\mathcal{T}_h$ is the decomposition of the domain.
+
+The LRNN-DG method formulation is: Find $u_h \in V_h$ such that
+\begin{equation}
+a_h(u_h, v_h) = l(v_h) \quad \forall v_h \in V_h
+\end{equation}
+where
+\begin{align}
+a_h(u, v) &= \int_{\Omega} \nabla_h u \cdot \nabla_h v \, dx - \int_{\mathcal{E}_h} \{r_h u\} \cdot \llbracket v \rrbracket \, ds - \int_{\mathcal{E}_h} \llbracket u \rrbracket \cdot \{\nabla_h v\} \, ds + \int_{\mathcal{E}_h} \sigma \llbracket u \rrbracket \cdot \llbracket v \rrbracket \, ds\\
+l(v_h) &= \int_{\Omega} f v_h \, ds - \int_{\mathcal{E}_h^{\partial}} g n \cdot \nabla_h v_h \, ds + \int_{\mathcal{E}_h^{\partial}} \sigma g v_h \, ds
+\end{align}
+
+The resulting system of equations is:
+\begin{equation}
+AU = L
+\end{equation}
+where $A$ is an $N_e M \times N_e M$ matrix, $L$ is an $N_e M \times 1$ vector, $N_e$ is the number of elements, and $M$ is the width of the last hidden layer.
+
+\subsection{LRNN-C$^0$DG Method}
+
+The LRNN-C$^0$DG method enforces continuity conditions across subdomain boundaries through collocation points, eliminating the need for penalty parameters. It adds constraints:
+
+\begin{enumerate}
+    \item Boundary conditions at collocation points on boundary edge:
+    \begin{equation}
+    u_h(x_j^e) = g(x_j^e) \quad \forall x_j^e \in \mathcal{P}_h^{\partial}
+    \end{equation}
+    
+    \item C$^0$-continuity conditions at collocation points on interior edges:
+    \begin{equation}
+    \llbracket u_h(x_j^e) \rrbracket = 0 \quad \forall x_j^e \in \mathcal{P}_h^i
+    \end{equation}
+\end{enumerate}
+
+The LRNN-C$^0$DG scheme becomes: Find $u_h \in V_h$ such that
+\begin{align}
+a_h^0(u_h, v_h) &= l^0(v_h) \quad \forall v_h \in V_h\\
+\llbracket u_h(x_j^e) \rrbracket &= 0 \quad \forall x_j^e \in \mathcal{P}_h^i\\
+u_h(x_j^e) &= g(x_j^e) \quad \forall x_j^e \in \mathcal{P}_h^{\partial}
+\end{align}
+
+This leads to the augmented system:
+\begin{equation}
+\begin{bmatrix} A_1 \\ A_2 \end{bmatrix} U = \begin{bmatrix} L_1 \\ L_2 \end{bmatrix}
+\end{equation}
+solved using least squares.
+
+\subsection{LRNN-C$^1$DG Method}
+
+The LRNN-C$^1$DG method enforces both C$^0$ and C$^1$ continuity conditions:
+
+\begin{enumerate}
+    \item C$^0$-continuity (function value continuity): $\llbracket u_h(x_j^e) \rrbracket = 0$
+    \item C$^1$-continuity (gradient continuity): $[\nabla u_h(x_j^e)] = 0$
+    \item Boundary conditions: $u_h(x_j^e) = g(x_j^e)$
+\end{enumerate}
+
+The method is formulated as: Find $u_h \in V_h$ such that
+\begin{align}
+a_h^K(u_h, v_h) &= \int_K f v_h \, dx \quad \forall v_h \in V_h \quad \forall K \in \mathcal{T}_h\\
+\llbracket u_h(x_j^e) \rrbracket &= 0 \quad \forall x_j^e \in \mathcal{P}_h^i\\
+[\nabla u_h(x_j^e)] &= 0 \quad \forall x_j^e \in \mathcal{P}_h^i\\
+u_h(x_j^e) &= g(x_j^e) \quad \forall x_j^e \in \mathcal{P}_h^{\partial}
+\end{align}
+
+This results in a larger system of equations solved using least squares.
+
+\subsection{Space-Time LRNN-DG Methods for Time-Dependent Problems}
+
+For time-dependent problems like the heat equation:
+\begin{align}
+u_t(t,x) - \Delta u(t,x) &= f(t,x) \quad \text{in } I \times \Omega\\
+u(0,x) &= u_0(x) \quad \text{in } \Omega\\
+u(t,x) &= g(t,x) \quad \text{on } I \times \partial\Omega
+\end{align}
+
+The space-time approach treats temporal and spatial variables equally, avoiding error accumulation from time-stepping:
+
+\begin{enumerate}
+    \item The domain $I \times \Omega$ is partitioned into space-time elements
+    \item Local neural networks approximate the solution on each space-time element
+    \item DG formulations couple the elements together
+    \item Three variants (LRNN-DG, LRNN-C$^0$DG, LRNN-C$^1$DG) are extended to space-time
+\end{enumerate}
+
+The space-time LRNN-DG scheme is formulated as: Find $u_h^{\tau} \in V_h^{\tau}$ such that
+\begin{equation}
+B_h^{\tau}(u_h^{\tau}, v_h^{\tau}) = l(v_h^{\tau}) \quad \forall v_h^{\tau} \in V_h^{\tau}
+\end{equation}
+
+The resulting system is solved in one step rather than through time-marching.
+
+\section{Theoretical Findings}
+
+\subsection{Convergence Analysis for LRNN-DG Method}
+
+The key theoretical properties established include:
+
+\begin{enumerate}
+    \item \textbf{Consistency}: The LRNN-DG scheme is consistent with the original PDE.
+    
+    \item \textbf{Boundedness}: The bilinear form $a_h(u,v)$ satisfies the boundedness condition:
+    \begin{equation}
+    a_h(u,v) \leq C_b \|u\|_* \|v\|_* \quad \forall v \in V(h)
+    \end{equation}
+    
+    \item \textbf{Stability}: With sufficient penalty parameter $\sigma_0$, the bilinear form satisfies:
+    \begin{equation}
+    a_h(v,v) \geq C_s \|v\|_*^2 \quad \forall v \in V_h
+    \end{equation}
+    
+    \item \textbf{Céa-type Inequality}: The error between the exact solution $u$ and the numerical solution $u_h$ is bounded by:
+    \begin{equation}
+    \|u - u_h\|_* \leq (1 + C_b/C_s) \inf_{v_h \in V_h} \|u - v_h\|_*
+    \end{equation}
+    
+    \item \textbf{Approximation Property}: Under appropriate assumptions about the approximation capabilities of neural networks, for any small positive $\epsilon$, there exists a positive integer $M_{\epsilon}$ such that if $M > M_{\epsilon}$, then:
+    \begin{equation}
+    \|u - u_h\|_* \leq C\epsilon
+    \end{equation}
+\end{enumerate}
+
+\subsection{Convergence Analysis for LRNN-C$^0$DG and LRNN-C$^1$DG Methods}
+
+For LRNN-C$^0$DG and LRNN-C$^1$DG methods, convergence requires additional assumptions:
+
+\begin{enumerate}
+    \item \textbf{Jump Reduction}: As the number of collocation points increases, the jumps in function values and derivatives decrease. For LRNN-C$^0$DG:
+    \begin{equation}
+    \|\llbracket \tilde{u}_h \rrbracket\|_{0,e} \leq Ch_e^{1/2}\epsilon \quad \text{and} \quad \|\tilde{u}_h - g\|_{0,e} \leq Ch_e^{1/2}\epsilon
+    \end{equation}
+    
+    For LRNN-C$^1$DG, additional gradient jump reduction:
+    \begin{equation}
+    \|[\nabla u_h(x_j^e)]\|_{0,e} \leq Ch_e^{-1/2}\epsilon
+    \end{equation}
+    
+    \item \textbf{Convergence Results}: Under these assumptions, both methods achieve
+    \begin{equation}
+    \|u - u_h\|_* \leq C\epsilon
+    \end{equation}
+    for sufficiently large $M$ and number of collocation points $N_e$.
+\end{enumerate}
+
+\section{Numerical Examples and Results}
+
+\subsection{One-Dimensional Helmholtz Equation}
+
+For the problem:
+\begin{align}
+u_{xx} - \lambda u &= f(x) \quad \text{in } \Omega = [0,1]\\
+u(0) &= \sin(0.4\pi) \cos(0.4\pi)\\
+u(1) &= \sin(4.4\pi) \cos(4.4\pi)
+\end{align}
+with exact solution $u(x) = \sin(4\pi(x+0.1)) \cos(4\pi(x+0.1))$
+
+Results show that:
+\begin{itemize}
+    \item All three methods (LRNN-DG, LRNN-C$^0$DG, LRNN-C$^1$DG) achieve high accuracy
+    \item With just 80 degrees of freedom (DoF) per subdomain, errors in $L^2$ norm reach the order of $10^{-9}$
+    \item LRNN-C$^1$DG slightly outperforms LRNN-C$^0$DG, which outperforms LRNN-DG
+    \item For fixed DoF per subdomain, errors decrease as the subdomain size decreases
+    \item For fixed subdomain size, errors decrease rapidly with increasing DoF initially, then stabilize
+\end{itemize}
+
+\subsection{Two-Dimensional Poisson Equation}
+
+For the problem:
+\begin{align}
+-\Delta u &= f \quad \text{in } \Omega = [0,1]^2\\
+u &= g \quad \text{on } \partial\Omega
+\end{align}
+with exact solution $u = e^{x+y}\sin(3\pi x + 0.5\pi)\cos(\pi y + 0.2\pi)$
+
+Results show that:
+\begin{itemize}
+    \item All three methods achieve high accuracy, with LRNN-C$^1$DG performing best
+    \item With 160 DoF per element, $L^2$ errors reach $10^{-6}$ to $10^{-8}$
+    \item Comparison with traditional finite element method (FEM) and DG method shows superior accuracy per DoF
+    \item LRNN methods outperform polynomial-based methods (P$_k$ FEM and P$_k$ DG) with the same DoF
+    \item Error distribution analysis shows LRNN-DG produces smoother but larger errors, while LRNN-C$^0$DG and LRNN-C$^1$DG have smaller but more oscillatory errors
+\end{itemize}
+
+\subsection{Heat Equation (Time-Dependent Problem)}
+
+For the problem:
+\begin{align}
+u_t(t,x) - \lambda \Delta u(t,x) &= f(t,x) \quad \text{in } I \times \Omega\\
+u(0,x) &= u_0(x) \quad \text{in } \Omega\\
+u(t,x) &= g(t,x) \quad \text{on } I \times \partial\Omega
+\end{align}
+where $\Omega = [0,1]$, $I = [0,1]$, and $\lambda = 1$ or $0.001$, with exact solution $u = -e\cos(\pi x + 3\pi) + t^2$
+
+Results from space-time methods show:
+\begin{itemize}
+    \item All space-time LRNN methods achieve high accuracy in a single computation step
+    \item With 320 DoF per space-time element, $L^2$ errors reach $10^{-7}$ to $10^{-8}$
+    \item Space-time LRNN methods outperform traditional FEM with backward Euler time-stepping
+    \item Error distribution analysis shows traditional methods suffer from error accumulation over time, while space-time LRNN methods avoid this issue
+    \item LRNN-C$^0$DG and LRNN-C$^1$DG provide better accuracy than LRNN-DG
+\end{itemize}
+
+The numerical tests also validate theoretical assumptions about jump reduction with increasing collocation points, showing that jumps in function values and derivatives become negligible (near machine precision) as the number of collocation points increases.
+
+\section{Implications and Advantages}
+
+\subsection{Computational Efficiency}
+
+\begin{itemize}
+    \item \textbf{Reduced Parameter Count}: By training only output layer weights, LRNN methods drastically reduce the number of trainable parameters compared to fully parameterized neural networks
+    
+    \item \textbf{Linear System Advantage}: The training reduces to solving a linear system rather than non-convex optimization, improving both efficiency and stability
+    
+    \item \textbf{Space-Time Approach}: For time-dependent problems, the space-time formulation allows solving the entire problem in one step, avoiding time-stepping and error accumulation
+    
+    \item \textbf{Mesh-Free Nature}: The methods are effectively mesh-free for local approximation, making them well-suited for complex geometries
+\end{itemize}
+
+\subsection{Accuracy and Solution Quality}
+
+\begin{itemize}
+    \item \textbf{Superior Accuracy per DoF}: The methods achieve better accuracy than traditional FEM and DG methods with the same number of degrees of freedom
+    
+    \item \textbf{Penalty Parameter Freedom}: LRNN-C$^0$DG and LRNN-C$^1$DG eliminate the need for penalty parameters, avoiding the challenge of parameter tuning
+    
+    \item \textbf{Collocation Effectiveness}: The experiments confirm that using collocation points to enforce continuity conditions is highly effective
+    
+    \item \textbf{Gradient Accuracy}: For problems requiring derivative information, LRNN-C$^1$DG provides high-quality gradient approximations
+\end{itemize}
+
+\subsection{Versatility and Adaptability}
+
+\begin{itemize}
+    \item \textbf{Framework Flexibility}: The approach combines the advantages of neural networks (approximation power) with the mathematical foundation of DG methods (well-established theoretical framework)
+    
+    \item \textbf{Problem Scope}: The methods handle both steady-state and time-dependent problems effectively
+    
+    \item \textbf{Boundary Condition Handling}: Different types of boundary conditions are naturally incorporated
+    
+    \item \textbf{Multiple Formulations}: The three formulations (LRNN-DG, LRNN-C$^0$DG, LRNN-C$^1$DG) offer options for different problem requirements
+\end{itemize}
+
+\subsection{Potential Limitations and Future Directions}
+
+\begin{itemize}
+    \item \textbf{Error Stagnation}: The errors appear to stagnate after reaching a certain threshold, possibly due to linear dependence among basis functions with larger network widths
+    
+    \item \textbf{Extension to Nonlinear Problems}: The current formulation addresses linear PDEs, with extension to nonlinear problems identified as a future direction
+    
+    \item \textbf{Parallel Processing Potential}: The local nature of the approximation suggests good parallelization potential
+    
+    \item \textbf{Activation Function and Random Distribution}: The choice of activation functions and parameter distributions affects performance and warrants further investigation
+\end{itemize}
+
+\end{document} 

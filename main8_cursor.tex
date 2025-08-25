@@ -1,0 +1,297 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+
+\title{On Computing the Hyperparameter of Extreme Learning Machines: Algorithm and Application to Computational PDEs}
+\author{Summary of Dong and Yang (2021)}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+Extreme Learning Machine (ELM) is a neural network-based method for solving computational partial differential equations (PDEs) that has shown promising results. The key characteristics of ELM are:
+
+\begin{itemize}
+    \item Random but fixed (non-trainable) hidden-layer coefficients
+    \item Trainable linear output-layer coefficients determined by a linear or nonlinear least squares method
+\end{itemize}
+
+This approach differs from traditional deep neural network (DNN)-based PDE solvers which typically adjust all network weights through gradient descent optimization. While DNN-based methods face challenges with limited accuracy, lack of consistent convergence rates, and high computational costs, ELM methods have demonstrated exponential convergence behavior and high accuracy.
+
+A critical hyperparameter in ELM is $R_m$, the maximum magnitude of random coefficients used to initialize the hidden layers. The choice of $R_m$ significantly affects solution accuracy, with optimal results typically achieved with moderate $R_m$ values.
+
+\section{ELM Algorithm for Solving PDEs}
+
+\subsection{Basic ELM Architecture}
+
+Consider a domain $\Omega$ in $d$ dimensions and a PDE system:
+\begin{align}
+    L(u) &= f(x) \\
+    B(u) &= g(x) \text{ on } \partial\Omega
+\end{align}
+
+where $L$ and $B$ are differential operators (potentially nonlinear), $u(x)$ is the solution to be determined, and $f(x)$ and $g(x)$ are given functions.
+
+The solution is approximated using a feed-forward neural network with architecture $[M_0, M_1, ..., M_L]$, where:
+\begin{itemize}
+    \item $M_0 = d$ (input dimension)
+    \item $M_L$ = dimension of $u$ (output dimension)
+    \item $L+1$ is the total number of layers
+    \item $M_i$ is the number of nodes in layer $i$
+\end{itemize}
+
+For a set of collocation points $Z = \{x_i \in \Omega, 1 \leq i \leq Q\}$ with boundary points $Z_b = \{x_i \in Z \text{ and } x_i \in \partial\Omega, 1 \leq i \leq Q_b\}$, the neural network is defined by:
+
+\begin{align}
+    \beta^l &= \sigma(\beta^{l-1}W^l + b^l), \quad 1 \leq l \leq L-1 \\
+    U &= \beta^{L-1}W^L
+\end{align}
+
+where $\sigma(\cdot)$ is the activation function, $W^l$ is the weight matrix for layer $l$, and $b^l$ is the bias vector.
+
+\subsection{Single-$R_m$-ELM Configuration}
+
+In the traditional ELM implementation (Single-$R_m$-ELM), all hidden layer weights and biases $(W^l, b^l)$ for $1 \leq l \leq L-1$ are set to random values generated uniformly on $[-R_m, R_m]$ and fixed. Only the output layer weights $W^L$ are trainable.
+
+The solution on the continuum level is expressed as:
+\begin{equation}
+    u_i(x) = \sum_{j=1}^{M} V_j(x) \omega_{ji}, \quad 1 \leq i \leq M_L
+\end{equation}
+
+where $V_j(x)$ are the output fields of the last hidden layer, and $\omega_{ji}$ are the trainable output layer weights.
+
+\subsection{Multi-$R_m$-ELM Configuration}
+
+A key innovation in the paper is the Multi-$R_m$-ELM configuration, where each hidden layer uses a different $R_m$ value:
+\begin{itemize}
+    \item Hidden layer $l$ uses weights/biases randomly generated on $[-R_m^{(l)}, R_m^{(l)}]$
+    \item The set of hyperparameters is represented as $\mathbf{R_m} = (R_m^{(1)}, R_m^{(2)}, ..., R_m^{(L-1)})$
+\end{itemize}
+
+This configuration generally provides higher accuracy than Single-$R_m$-ELM.
+
+\subsection{Training Process}
+
+For a given PDE system, training proceeds as follows:
+
+1. Substitute the ELM representation into the PDE:
+\begin{align}
+    L\left(\sum_{j=1}^{M} V_j(x_p)\omega_j\right) &= f(x_p), \quad \forall x_p \in Z, 1 \leq p \leq Q \\
+    B\left(\sum_{j=1}^{M} V_j(x_q)\omega_j\right) &= g(x_q), \quad \forall x_q \in Z_b, 1 \leq q \leq Q_b
+\end{align}
+
+2. Solve the resulting system of equations:
+   - For linear PDEs: Linear least squares (LLSQ)
+   - For nonlinear PDEs: Nonlinear least squares with perturbations (NLSQ-perturb)
+
+3. For time-dependent PDEs, employ block time-marching:
+   - Divide the spatial-temporal domain into sequential time blocks
+   - Solve each time block separately using the solution from the previous time block as the initial condition
+
+\section{Algorithm for Computing Optimal $R_m$}
+
+A major contribution of the paper is a novel algorithm to determine the optimal $R_m$ value(s).
+
+\subsection{Residual Minimization Approach}
+
+The optimal $R_m$ is computed by minimizing the residual norm of the least squares solution:
+
+1. For Single-$R_m$-ELM, define the residual vector:
+\begin{equation}
+    r(R_m) = 
+    \begin{bmatrix}
+    \vdots \\
+    L(u^{LS}(x_p, R_m)) - f(x_p) \\
+    \vdots \\
+    B(u^{LS}(x_q, R_m)) - g(x_q) \\
+    \vdots
+    \end{bmatrix}
+\end{equation}
+
+2. Find $R_{m0}$ that minimizes the norm of this residual:
+\begin{equation}
+    R_{m0} = \arg\min_{R_m} \|r(R_m)\|
+\end{equation}
+
+3. For Multi-$R_m$-ELM, find the vector $\mathbf{R_{m0}}$ that minimizes the residual norm:
+\begin{equation}
+    \mathbf{R_{m0}} = \arg\min_{\mathbf{R_m}} \|r(\mathbf{R_m})\|
+\end{equation}
+
+\subsection{Differential Evolution Algorithm}
+
+The paper employs the differential evolution (DE) algorithm to solve these optimization problems:
+
+1. Generate a population of candidate $R_m$ values
+2. Evaluate the cost function $\|r(R_m)\|$ for each candidate using Algorithm 1 or 2:
+   \begin{itemize}
+      \item Set hidden-layer coefficients using $R_m$ (or $\mathbf{R_m}$)
+      \item Evaluate neural network outputs on collocation points
+      \item Solve linear/nonlinear system to get $\omega^{LS}$
+      \item Compute residual vector and its norm
+   \end{itemize}
+3. Update the population using differential evolution operations
+4. Repeat until convergence
+
+This approach is a pre-processing procedure that only needs to be performed once for a given problem. The optimal $R_m$ value remains effective across different resolutions and parameter configurations.
+
+\section{Implementation Improvements}
+
+A significant improvement to the ELM implementation is the use of forward-mode auto-differentiation to compute differential operators involving the output fields of the last hidden layer. This is implemented using the "ForwardAccumulator" in TensorFlow, replacing the reverse-mode auto-differentiation ("GradientTape") used in previous work.
+
+This change dramatically reduces computational time because in ELM, the number of nodes in the last hidden layer is typically much larger than that of the input layer, making forward-mode differentiation more efficient.
+
+\section{Theoretical Findings}
+
+\subsection{Properties of Optimal $R_m$ in Single-$R_m$-ELM}
+
+Through extensive numerical experimentation, the paper establishes several important properties of the optimal $R_m$ value:
+
+\begin{itemize}
+    \item $R_{m0}$ is largely independent of the number of collocation points
+    \item $R_{m0}$ has a stronger dependence on the number of training parameters for networks with a single hidden layer, but this dependence is weak for networks with two or more hidden layers
+    \item $R_{m0}$ generally decreases with increasing network depth, with a significant drop when moving from one to two hidden layers, and only slight decreases thereafter
+    \item $R_{m0}$ has only a weak dependence on the width of preceding hidden layers, tending to decrease slightly with increasing width
+\end{itemize}
+
+\subsection{Properties of Optimal $R_m$ in Multi-$R_m$-ELM}
+
+For Multi-$R_m$-ELM, the components of the optimal $\mathbf{R_{m0}}$ show more irregular relationships with simulation parameters, but still exhibit some patterns:
+
+\begin{itemize}
+    \item Components of $\mathbf{R_{m0}}$ are largely independent of the number of collocation points
+    \item The relationship between $\mathbf{R_{m0}}$ and the number of training parameters is less regular than in Single-$R_m$-ELM
+    \item Using different $R_m$ values for different hidden layers consistently produces more accurate results than using a single $R_m$ value
+\end{itemize}
+
+\section{Numerical Examples and Results}
+
+The paper presents extensive numerical experiments for both linear and nonlinear PDEs:
+
+\subsection{Function Approximation}
+
+For a 2D function approximation problem:
+\begin{equation}
+    f(x,y) = \left(\frac{3}{2}\cos\left(\frac{3}{2}\pi x+\frac{9\pi}{20}\right) + 2\cos\left(\frac{3\pi x-\pi}{5}\right)\right)\left(\frac{3}{2}\cos\left(\frac{3}{2}\pi y+\frac{9\pi}{20}\right) + 2\cos\left(\frac{3\pi y-\pi}{5}\right)\right)
+\end{equation}
+
+Key findings:
+\begin{itemize}
+    \item ELM achieved accuracy with errors on the order of $10^{-8}$
+    \item Errors decreased exponentially with increasing number of collocation points and training parameters
+    \item Multi-$R_m$-ELM consistently outperformed Single-$R_m$-ELM in accuracy
+\end{itemize}
+
+\subsection{Poisson Equation}
+
+For the 2D Poisson equation:
+\begin{align}
+    \frac{\partial^2 u}{\partial x^2} + \frac{\partial^2 u}{\partial y^2} &= f(x,y) \\
+    \text{with Dirichlet boundary conditions}
+\end{align}
+
+Results showed:
+\begin{itemize}
+    \item ELM solution achieved maximum errors on the order of $10^{-8}$
+    \item Exponential convergence with respect to collocation points and training parameters
+    \item ELM far outperformed classical FEM (2nd-order) in accuracy for the same computational cost
+    \item ELM was competitive with high-order FEM, outperforming it for larger problem sizes
+\end{itemize}
+
+\subsection{Nonlinear Helmholtz Equation}
+
+For the nonlinear Helmholtz equation:
+\begin{align}
+    \frac{\partial^2 u}{\partial x^2} + \frac{\partial^2 u}{\partial y^2} - 100u + 10\cos(2u) &= f(x,y) \\
+    \text{with Dirichlet boundary conditions}
+\end{align}
+
+Results demonstrated:
+\begin{itemize}
+    \item Single-$R_m$-ELM achieved maximum errors on the order of $10^{-10}$
+    \item Multi-$R_m$-ELM consistently provided better accuracy
+    \item ELM outperformed both classical and high-order FEM in terms of accuracy vs. computational cost
+\end{itemize}
+
+\subsection{Viscous Burgers' Equation}
+
+For the time-dependent Burgers' equation:
+\begin{align}
+    \frac{\partial u}{\partial t} + u\frac{\partial u}{\partial x} - \nu\frac{\partial^2 u}{\partial x^2} &= f(x,t) \\
+    \text{with appropriate boundary and initial conditions}
+\end{align}
+
+Results showed:
+\begin{itemize}
+    \item ELM with block time-marching achieved maximum errors on the order of $10^{-9}$ across the entire space-time domain
+    \item ELM dramatically outperformed both classical and high-order FEM for time-dependent problems
+    \item As the temporal dimension increases (for longer-time simulations), ELM's advantage becomes even more prominent
+\end{itemize}
+
+\section{Performance Comparison with FEM}
+
+The paper provides comprehensive comparisons between ELM and both classical and high-order FEM across multiple test problems:
+
+\subsection{Comparison with Classical FEM (2nd-order)}
+
+\begin{itemize}
+    \item ELM consistently and significantly outperforms classical FEM for all problems except for very small problem sizes
+    \item For the same computational budget, ELM achieves orders of magnitude better accuracy
+    \item For a target accuracy level, ELM requires substantially less computational time
+\end{itemize}
+
+\subsection{Comparison with High-Order FEM}
+
+\begin{itemize}
+    \item For stationary PDEs, a crossover point exists with respect to problem size:
+    \begin{itemize}
+        \item For smaller problem sizes: ELM and high-order FEM perform comparably, with high-order FEM slightly better
+        \item For larger problem sizes: ELM markedly outperforms high-order FEM
+    \end{itemize}
+    \item For time-dependent PDEs, ELM with block time-marching consistently and significantly outperforms high-order FEM
+    \item ELM produces superior performance for both h-type refinements (fixed element degree, varied mesh size) and p-type refinements (fixed mesh size, varied element degree)
+\end{itemize}
+
+\section{Implications and Advantages}
+
+The paper demonstrates several important implications and advantages of the improved ELM approach:
+
+\subsection{Practical Benefits of Optimal $R_m$ Computation}
+
+\begin{itemize}
+    \item The optimal $R_m$ computation is a one-time pre-processing step that determines near-optimal values for subsequent calculations
+    \item $R_m$ values in a neighborhood of the optimal value lead to comparable accuracy, providing flexibility in implementation
+    \item For time-dependent PDEs, the optimal $R_m$ computed for the first time block can be used for all subsequent time blocks
+\end{itemize}
+
+\subsection{Advantages of Multi-$R_m$-ELM}
+
+\begin{itemize}
+    \item Consistently produces more accurate results than Single-$R_m$-ELM under identical conditions
+    \item Provides a systematic way to initialize different hidden layers with appropriate random weight magnitudes
+    \item Particularly beneficial for deeper networks, where the optimal $R_m$ values for different layers can vary significantly
+\end{itemize}
+
+\subsection{Computational Performance}
+
+\begin{itemize}
+    \item The use of forward-mode auto-differentiation significantly reduces ELM training time compared to previous implementations
+    \item ELM exhibits exponential convergence for smooth solutions, similar to high-order spectral/hp-finite element methods
+    \item ELM is particularly advantageous for time-dependent problems, where its block time-marching approach outperforms traditional time-stepping schemes
+\end{itemize}
+
+\subsection{Broader Implications for Scientific Computing}
+
+\begin{itemize}
+    \item The results provide strong evidence that neural network-based methods can be computationally competitive with traditional numerical techniques
+    \item ELM's performance demonstrates that neural networks can excel in accuracy and computational efficiency for solving PDEs
+    \item The approach represents a significant step toward making neural network-based methods practical and efficient for real-world scientific and engineering applications
+\end{itemize}
+
+\end{document} 

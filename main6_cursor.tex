@@ -1,0 +1,292 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+
+\title{Extreme Learning Machine with Kernels for Solving Elliptic Partial Differential Equations}
+\author{Summary of Li, Liu, and Xiao (2023)}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+Solving partial differential equations (PDEs) using machine learning methods has attracted increasing attention due to the strong nonlinear approximation abilities of these methods. While various machine learning approaches have been employed for solving PDEs, including artificial neural networks and wavelet neural networks, the Extreme Learning Machine (ELM) represents a unique approach due to its efficiency. This paper introduces a new method for solving elliptic partial differential equations based on an extreme learning machine with kernels (KELM), which offers significant advantages in terms of computational efficiency and accuracy.
+
+Traditional neural network methods for solving PDEs, including those pioneered by Lagaris et al., face challenges related to the gradient-based optimization processes used to train their parameters. Specifically, these methods may suffer from convergence to local optima, require extensive computational resources, and involve tuning numerous parameters. The KELM approach overcomes these limitations through a unique learning mechanism that avoids iterative optimization.
+
+\section{Mathematical Foundations of KELMs}
+
+The Extreme Learning Machine (ELM) is a single hidden layer neural network where the input layer weights and hidden layer biases are randomly assigned, and only the output weights need to be determined. For a multi-input, single-output problem with input samples $X=(X_j)_{j=1,2,\ldots,N}$ and output samples $T=(t_j)_{j=1,2,\ldots,N}$, an ELM can be mathematically expressed as:
+
+\begin{equation}
+o_j = \sum_{i=1}^{L} \beta_i g(W_i \cdot X_j + \gamma_i) \approx t_j, j=1,\ldots,N
+\end{equation}
+
+where $o_j$ is the output variable, $\beta_i$ is the weight of the output layers, $g(x)$ is an activation function (typically sigmoid: $g(x) = \frac{1}{1+e^{-x}}$), $W_i$ is the weight between the input layers and the $i$-th hidden neuron, $\gamma_i$ is the threshold of the $i$-th hidden neuron, and $L$ represents the number of neurons in the hidden layers.
+
+The ELM learning process aims to minimize the output error:
+
+\begin{equation}
+\sum_{j=1}^{N} \|o_j - t_j\| = 0
+\end{equation}
+
+This equation can be rewritten in matrix form as:
+
+\begin{equation}
+H\beta = T
+\end{equation}
+
+where $H$ is the hidden layer output matrix. Once the input layer weight $W$ and hidden layer threshold $\gamma$ are randomly given, the output weight $\beta$ can be analytically determined as:
+
+\begin{equation}
+\beta = H^{\dagger}T
+\end{equation}
+
+where $H^{\dagger}$ is the Moore-Penrose generalized inverse of matrix $H$.
+
+To improve stability and generalization, a regularization coefficient $\lambda$ is introduced:
+
+\begin{equation}
+\beta = H^T(HH^T + \lambda I)^{-1}T
+\end{equation}
+
+The kernel-based ELM (KELM) further extends this approach by introducing a kernel function to replace the activation function:
+
+\begin{equation}
+o_j = \begin{bmatrix} K(X_j, X_1) \\ K(X_j, X_2) \\ \vdots \\ K(X_j, X_N) \end{bmatrix}^T (\Omega + \lambda I)^{-1}T
+\end{equation}
+
+where $K(X_i, X_j)$ is a Gaussian kernel function:
+
+\begin{equation}
+K(X_i, X_j) = \exp\left(-\frac{\|X_i - X_j\|^2}{\sigma^2}\right)
+\end{equation}
+
+and $\sigma$ is a kernel parameter. Compared to standard ELM, KELM does not need to specify the weight of the input layer or the number of neurons in the hidden layer, which reduces parameter tuning requirements and improves stability.
+
+\section{Algorithm for Solving Elliptic PDEs using KELM}
+
+\subsection{Problem Formulation}
+Consider a standard elliptic PDE:
+
+\begin{equation}
+\frac{\partial^2 z}{\partial y^2} + \frac{\partial^2 z}{\partial x^2} = f(x, y, z), \quad a \leq x \leq b, \quad c \leq y \leq d
+\end{equation}
+
+with Dirichlet boundary conditions:
+
+\begin{equation}
+z(a, y) = h_0(y), \quad z(b, y) = h_1(y), \quad z(x, c) = q_0(x), \quad z(x, d) = q_1(x)
+\end{equation}
+
+\subsection{Trial Solution Construction}
+The first key step in the KELM approach is to express the trial solution as a combination of boundary conditions and a KELM output:
+
+\begin{equation}
+z(x, y) = A(x, y) + B(x, y)u(x, y)
+\end{equation}
+
+where:
+
+\begin{align}
+A(x, y) &= \frac{b-x}{b-a}h_0(y) + \frac{x-a}{b-a}h_1(y) + \frac{d-y}{d-c}\left(q_0(x) - \left[\frac{b-x}{b-a}q_0(a) + \frac{x-a}{b-a}q_0(b)\right]\right) \nonumber \\
+&+ \frac{y-c}{d-c}\left(q_1(x) - \left[\frac{b-x}{b-a}q_1(a) + \frac{x-a}{b-a}q_1(b)\right]\right)
+\end{align}
+
+and 
+
+\begin{equation}
+B(x, y) = (x-a)(b-x)(y-c)(d-y)
+\end{equation}
+
+In this formulation, $u(x,y)$ is the output of the KELM. This construction ensures that the trial solution automatically satisfies the boundary conditions, regardless of the values of $u(x,y)$.
+
+\subsection{Error Function and Derivatives}
+To solve the PDE, an error function is defined:
+
+\begin{equation}
+\sum_{j=1}^{N} \left\|\frac{\partial^2 z_j}{\partial y^2} + \frac{\partial^2 z_j}{\partial x^2} - f(x_j, y_j, z_j)\right\| = 0
+\end{equation}
+
+The derivatives in this error function are calculated as:
+
+\begin{align}
+\frac{\partial z}{\partial x} &= \frac{\partial A}{\partial x} + \frac{\partial B}{\partial x}u + \frac{\partial u}{\partial x}B \\
+\frac{\partial z}{\partial y} &= \frac{\partial A}{\partial y} + \frac{\partial B}{\partial y}u + \frac{\partial u}{\partial y}B \\
+\frac{\partial^2 z}{\partial x^2} &= \frac{\partial^2 A}{\partial x^2} + \frac{\partial^2 B}{\partial x^2}u + 2\frac{\partial B}{\partial x}\frac{\partial u}{\partial x} + \frac{\partial^2 u}{\partial x^2}B \\
+\frac{\partial^2 z}{\partial y^2} &= \frac{\partial^2 A}{\partial y^2} + \frac{\partial^2 B}{\partial y^2}u + 2\frac{\partial B}{\partial y}\frac{\partial u}{\partial y} + \frac{\partial^2 u}{\partial y^2}B
+\end{align}
+
+\subsection{KELM Formulation for PDEs}
+Applying the KELM approach and denoting $X = (x_j, y_j)_{j=1,2,\ldots,N}$, the output $u$ can be expressed as:
+
+\begin{equation}
+u_j = K(X_j, X)(\lambda I + \Omega)^{-1}T_j, \quad j=1,2,\ldots,N
+\end{equation}
+
+where:
+
+\begin{equation}
+T_j = -\left[\frac{\partial^2 A(X_j)}{\partial x^2} + \frac{\partial^2 A(X_j)}{\partial y^2} - f(X_j, z_j)\right]
+\end{equation}
+
+and $\Omega = \{\Omega_{ij}\}_{i,j=1,2,\ldots,N}$ with:
+
+\begin{align}
+\Omega_{ij} &= K(X_i, X_j) + 2\frac{\partial B(X_j)}{\partial x}\frac{\partial K(X_i, X_j)}{\partial x} + 2\frac{\partial B(X_j)}{\partial y}\frac{\partial K(X_i, X_j)}{\partial y} \nonumber \\
+&+ \frac{\partial^2 K(X_j)}{\partial x^2}B(x_j, y_j) + \frac{\partial^2 K(X_j)}{\partial y^2}B(x_j, y_j)
+\end{align}
+
+The numerical solution to the elliptic PDE is then expressed as:
+
+\begin{equation}
+\hat{z}_j = A(X_j) + (x_j - a)(b - x_j)(y_j - c)(d - y_j)u_j
+\end{equation}
+
+\subsection{Algorithm Steps}
+The KELM algorithm for solving elliptic PDEs can be summarized as follows:
+
+\begin{enumerate}
+    \item Select $N$ training points in the rectangular area $[a,b] \times [c,d]$.
+    \item Construct trial solutions based on boundary conditions.
+    \item Solve for $u_j$ using equation (17).
+    \item Calculate the numerical solution using equation (20).
+\end{enumerate}
+
+The KELM contains two parameters that need to be specified: the regularization coefficient $\lambda$ and kernel parameter $\sigma$. These parameters are determined using a grid search method, selecting values from the set $\{2^i | i = -9, -8, \ldots, 10\}$ by tuning on a random 10\% of the sample set.
+
+The time complexity of the proposed method is $O(N^3)$, which primarily depends on solving the linear system of equations in step 3.
+
+\section{Numerical Examples and Results}
+
+The paper examines three numerical examples to demonstrate the performance of the KELM approach and compares it with existing methods. All examples consider domains of $[0,1] \times [0,1]$.
+
+\subsection{Example 1}
+The first example involves the PDE:
+
+\begin{equation}
+\frac{\partial^2 z}{\partial y^2} + \frac{\partial^2 z}{\partial x^2} = e^{-x}(x-2+y^3+6y), \quad 0 \leq x \leq 1, \quad 0 \leq y \leq 1
+\end{equation}
+
+with Dirichlet boundary conditions:
+
+\begin{equation}
+z(0,y) = y^3, \quad z(1,y) = (1+y^3)e^{-1}, \quad z(x,0) = xe^{-x}, \quad z(x,1) = (x+1)e^{-x}
+\end{equation}
+
+The exact solution is $z = e^{-x}(x+y^3)$.
+
+Using a $10 \times 10$ grid (121 training points), the KELM achieved absolute errors less than $10^{-6}$. The mean absolute error (MAE), mean squared error (MSE), and standard deviation (SD) at the training points were approximately $1.02 \times 10^{-7}$, $2.85 \times 10^{-14}$, and $1.17 \times 10^{-7}$, respectively.
+
+Compared to existing methods such as the Chebyshev neural network (ChNN), wavelet neural network optimized with particle swarm optimization (WNNPSO), wavelet neural network optimized with butterfly optimization algorithm (WNNBOA), and wavelet neural network optimized with improved butterfly optimization algorithm (WNNIBOA), the KELM demonstrated superior performance:
+
+\begin{itemize}
+    \item KELM: MAE = $1.04 \times 10^{-6}$, MSE = $2.92 \times 10^{-12}$, SD = $1.35 \times 10^{-6}$
+    \item WNNIBOA: MAE = $9.76 \times 10^{-6}$, MSE = $1.53 \times 10^{-10}$, SD = $7.57 \times 10^{-6}$
+    \item WNNPSO: MAE = $1.93 \times 10^{-5}$, MSE = $6.48 \times 10^{-10}$, SD = $1.67 \times 10^{-5}$
+    \item WNNBOA: MAE = $7.27 \times 10^{-4}$, MSE = $8.15 \times 10^{-7}$, SD = $5.36 \times 10^{-4}$
+    \item ChNN: MAE = $1.26 \times 10^{-2}$, MSE = $2.72 \times 10^{-4}$, SD = $1.06 \times 10^{-2}$
+\end{itemize}
+
+\subsection{Example 2}
+The second example considers the PDE:
+
+\begin{equation}
+\frac{\partial^2 z}{\partial y^2} + \frac{\partial^2 z}{\partial x^2} = -z(x^2+y^2), \quad 0 \leq x \leq 1, \quad 0 \leq y \leq 1
+\end{equation}
+
+with Dirichlet boundary conditions:
+
+\begin{equation}
+z(0,y) = 0, \quad z(1,y) = \sin y, \quad z(x,0) = 0, \quad z(x,1) = \sin x
+\end{equation}
+
+The exact solution is $z = \sin(xy)$.
+
+Using the same grid as in Example 1, the KELM achieved absolute errors of less than $10^{-6}$. The MAE, MSE, and SD values at the training points were approximately $5.23 \times 10^{-7}$, $1.14 \times 10^{-13}$, and $3.78 \times 10^{-7}$, respectively.
+
+Comparative performance with other methods on untrained test points showed:
+
+\begin{itemize}
+    \item KELM: MAE = $3.80 \times 10^{-6}$, MSE = $2.08 \times 10^{-11}$, SD = $2.52 \times 10^{-6}$
+    \item WNNIBOA: MAE = $6.17 \times 10^{-6}$, MSE = $5.66 \times 10^{-11}$, SD = $4.30 \times 10^{-6}$
+    \item WNNPSO: MAE = $3.07 \times 10^{-5}$, MSE = $1.35 \times 10^{-9}$, SD = $2.01 \times 10^{-5}$
+    \item WNNBOA: MAE = $5.29 \times 10^{-4}$, MSE = $4.74 \times 10^{-7}$, SD = $4.41 \times 10^{-4}$
+\end{itemize}
+
+\subsection{Example 3}
+The third example examines the PDE:
+
+\begin{equation}
+\frac{\partial^2 z}{\partial y^2} + \frac{\partial^2 z}{\partial x^2} = \sin(\pi y) \sin(\pi x), \quad 0 \leq x \leq 1, \quad 0 \leq y \leq 1
+\end{equation}
+
+with homogeneous Dirichlet boundary conditions:
+
+\begin{equation}
+z(0,y) = 0, \quad z(1,y) = 0, \quad z(x,0) = 0, \quad z(x,1) = 0
+\end{equation}
+
+The exact solution is $z = -\frac{1}{2\pi^2} \sin(\pi x) \sin(\pi y)$.
+
+For this example, the KELM was compared with the ChNN method, and it demonstrated superior performance:
+
+\begin{itemize}
+    \item KELM: MAE = $3.39 \times 10^{-6}$, MSE = $1.73 \times 10^{-11}$, SD = $2.42 \times 10^{-6}$
+    \item ChNN: MAE = $2.00 \times 10^{-3}$, MSE = $6.32 \times 10^{-6}$, SD = $1.52 \times 10^{-3}$
+\end{itemize}
+
+\subsection{Effect of Grid Size}
+The paper also investigated the effect of grid size (number of training points) on the performance of the KELM method. Four grid sizes were tested: $5 \times 5$ (36 training points), $10 \times 10$ (121 training points), $15 \times 15$ (256 training points), and $20 \times 20$ (441 training points).
+
+The results showed that:
+\begin{itemize}
+    \item As the grid was refined, the MAE, MSE, and SD of the proposed method decreased.
+    \item The performance of the method with a $10 \times 10$ grid was very close to that with a $20 \times 20$ grid.
+    \item The method requires only a few training points to achieve high computational accuracy, making it computationally efficient.
+\end{itemize}
+
+\section{Application to Water Flow in Unsaturated Soils}
+
+As a practical application, the KELM method was applied to simulate water flow in unsaturated soils, a significant problem in engineering geology. The governing equation for steady-state water flow is:
+
+\begin{equation}
+\frac{\partial}{\partial x}\left(K_x(h)\frac{\partial h}{\partial x}\right) + \frac{\partial}{\partial y}\left(K_y(h)\frac{\partial h}{\partial y} + K_y(h)\right) = 0
+\end{equation}
+
+where $K(h) = K_s e^{\alpha_g h}$, with $K_s$ being the saturated permeability coefficient of soils ($K_s = 1 \times 10^{-4}$ m/s) and $\alpha_g$ the pore-size distribution parameter ($\alpha_g = 8 \times 10^{-3}$).
+
+The boundary conditions for this problem were:
+\begin{equation}
+h(0,y) = h_d, \quad h(W,y) = h_d, \quad h(x,0) = h_d, \quad h(x,L) = \frac{1}{\alpha_g}\ln\left((1-e^{\alpha_g h_d})\sin\left(\frac{\pi x}{W}\right) + e^{\alpha_g h_d}\right)
+\end{equation}
+
+where $h_d = -1$ m, $L = 1$ m, and $W = 1$ m.
+
+The KELM method produced numerical solutions that were highly consistent with the analytical solution, demonstrating its ability to handle practical engineering problems effectively.
+
+\section{Implications and Advantages}
+
+The KELM approach offers several significant advantages for solving elliptic PDEs:
+
+\begin{enumerate}
+    \item \textbf{Parameter Efficiency}: The KELM requires only two parameters (regularization coefficient $\lambda$ and kernel parameter $\sigma$), compared to numerous parameters in neural network-based methods. This makes KELM more efficient and easier to tune.
+    
+    \item \textbf{Computational Efficiency}: The KELM achieves a closed-form solution without requiring iterative optimization procedures, significantly reducing computational load compared to methods based on neural networks with gradient-based or heuristic learning algorithms.
+    
+    \item \textbf{Accuracy}: Across all numerical examples, the KELM demonstrated superior accuracy compared to existing methods, including ChNN, WNNPSO, WNNBOA, and WNNIBOA, achieving error rates typically 1-4 orders of magnitude lower.
+    
+    \item \textbf{Training Efficiency}: The KELM requires relatively few training points to achieve high computational accuracy, which further enhances its computational efficiency.
+    
+    \item \textbf{Stability}: The incorporation of the kernel method and regularization improves the stability and generalization ability of the ELM approach, making it more robust for solving PDEs.
+    
+    \item \textbf{Automatic Boundary Condition Satisfaction}: The trial solution construction automatically satisfies the boundary conditions, simplifying the overall solution process.
+\end{enumerate}
+
+These advantages make the KELM a promising approach for solving elliptic PDEs in various engineering applications, particularly when computational efficiency and high accuracy are required.
+
+\end{document} 

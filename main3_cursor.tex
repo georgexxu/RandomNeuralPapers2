@@ -1,0 +1,220 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,amsthm,amsfonts}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{booktabs}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+\title{Is Extreme Learning Machine Feasible? A Theoretical Assessment (Part I)}
+\author{Summary of Liu, Lin, Fang, and Xu, IEEE TNNLS 2015}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+This paper provides a comprehensive theoretical assessment of the feasibility of Extreme Learning Machine (ELM). ELM is an FNN-like learning system in which connections with output neurons are adjustable, while connections with and within hidden neurons are randomly fixed. The study addresses three fundamental questions:
+
+\begin{enumerate}
+    \item Does ELM degrade the generalization capability of traditional feedforward neural networks (FNNs) where all connections are adjusted?
+    \item If not, what is the number of hidden layer nodes needed to achieve optimal generalization capability?
+    \item How can the weak regularity of the hidden layer output matrix be guaranteed for efficient application of the generalized inverse technique?
+\end{enumerate}
+
+\section{ELM Model and Algorithm}
+
+\subsection{Problem Setup}
+
+Let $X \subseteq \mathbb{R}^d$ be the input space and $Y \subseteq \mathbb{R}$ be the output space, with unknown probability measure $\rho$ on $Z := X \times Y$ that admits a decomposition $\rho(x,y) = \rho_X(x)\rho(y|x)$. Given a sample set $z = (x_i, y_i)_{i=1}^m$ drawn independently according to $\rho$, the goal is to find an estimator that minimizes the generalization error:
+
+\begin{align}
+E(f) = \int_Z (f(x) - y)^2 d\rho
+\end{align}
+
+The hypothesis space in ELM is defined as:
+
+\begin{align}
+\mathcal{M}_n = \left\{f_n(\alpha, \beta, x) = \sum_{i=1}^n \alpha_i \phi(\beta_i, x): n \in \mathbb{N}\right\}
+\end{align}
+
+where $x \in X$, $\beta = (\beta_1, \beta_2, \ldots, \beta_n)^T \in \mathbb{R}^{n \times l}$ with $\beta_i \in \mathbb{R}^l$, $\alpha = (\alpha_1, \alpha_2, \ldots, \alpha_n)^T \in \mathbb{R}^n$, and $\phi: \mathbb{R}^l \times \mathbb{R}^n \rightarrow \mathbb{R}$ is a nonlinear activation function.
+
+\subsection{ELM Algorithm}
+
+The ELM algorithm differs from traditional FNN training in that it only adjusts the output weights while randomly fixing the hidden layer parameters. The algorithm consists of the following steps:
+
+\begin{algorithm}
+\caption{Standard ELM Algorithm}
+\begin{algorithmic}[1]
+\State \textbf{Given:} Training samples $z = (x_i, y_i)_{i=1}^m$, nonlinear function $\phi$, and hidden neuron number $n$
+\State Randomly assign hidden parameters $\tilde{\beta}_i$ in $\mathbb{R}^l, i = 1, \ldots, n$
+\State Calculate the hidden layer output matrix $H$, where:
+\begin{align*}
+H = \begin{bmatrix}
+\phi(\tilde{\beta}_1, x_1) & \phi(\tilde{\beta}_2, x_1) & \cdots & \phi(\tilde{\beta}_n, x_1) \\
+\phi(\tilde{\beta}_1, x_2) & \phi(\tilde{\beta}_2, x_2) & \cdots & \phi(\tilde{\beta}_n, x_2) \\
+\vdots & \vdots & \ddots & \vdots \\
+\phi(\tilde{\beta}_1, x_m) & \phi(\tilde{\beta}_2, x_m) & \cdots & \phi(\tilde{\beta}_n, x_m)
+\end{bmatrix}
+\end{align*}
+\State Calculate the output weight vector $\alpha^* = H^\dagger y$ where $H^\dagger$ is a Moore-Penrose generalized inverse of $H$ and $y = (y_1, y_2, \ldots, y_m)^T$
+\end{algorithmic}
+\end{algorithm}
+
+The ELM estimator is then defined as:
+\begin{align}
+f_{ELM}(x) = f_n(\alpha^*, \tilde{\beta}, x) = \sum_{i=1}^n \alpha_i^* \phi(\tilde{\beta}_i, x)
+\end{align}
+
+This approach reduces the complex nonlinear optimization problem of traditional FNN training to a simple linear least squares problem, significantly reducing computational complexity.
+
+\section{Theoretical Findings on Generalization Capability}
+
+\subsection{Baseline for Comparison}
+
+To assess whether ELM degrades generalization capability, the paper first establishes a baseline of FNN estimators. For functions with smoothness order $r$, the optimal generalization bound is known to be:
+
+\begin{align}
+C_1 m^{-\frac{2r}{2r+d}} \leq e_m(\Psi_1) \leq C_2 m^{-\frac{2r}{2r+d}} \log m
+\end{align}
+
+where $m$ is the number of samples, $d$ is the input dimension, and $r$ is the smoothness order of the target function.
+
+\subsection{ELM with Polynomial Activation Functions}
+
+For the case where $\phi(\beta_i, x) = (\omega_i x + b_i)^s$ with $\beta_i = (\omega_i, b_i) \in [0,1]^{d+1}$, both $\omega_i$ and $b_i$ drawn independently according to uniform distribution in $[0,1]^d$ and $[0,1]$, and $s \in \mathbb{N}$, the paper proves:
+
+\textbf{Theorem 1:} Assume $f_\rho \in F(r, C_0)$ with $0 < r \leq 1$ and $C_0 \geq 0$, and $\rho_X$ is absolutely continuous with respect to Lebesgue measure on $X$. Let $f_{ELM_P}$ be the ELM estimator. Then, whenever $s = [m^{1/(d+2r)}]$ and $n = [m^{d/(d+2r)}]$, there holds:
+
+\begin{align}
+C_1 m^{-\frac{2r}{d+2r}} \leq \mathbb{E}_{\rho^m}\mathbb{E}_{\mu^n} \left( \|\pi_M(f_{ELM_P}) - f_\rho\|_\rho^2 \right) \leq C_2 m^{-\frac{2r}{d+2r}} \log m
+\end{align}
+
+where $\pi_M$ is a truncation operator and $C_1, C_2$ are positive constants.
+
+The proof demonstrates that for any $n \geq \dim(P_s^d)$, the hypothesis space of ELM with polynomial activation equals the space of all polynomials of degree at most $s$ with $d$ variables. This means ELM with polynomial activation does not degrade the generalization capability of FNNs.
+
+\subsection{ELM with Nadaraya-Watson Activation Functions}
+
+For Nadaraya-Watson activation functions defined as:
+
+\begin{align}
+\phi_{NW}(t_i, x) = \frac{e^{-A \|x - t_i\|}}{\sum_{j=1}^n e^{-A \|x - t_j\|}}
+\end{align}
+
+where $A > 0$ is the width parameter, the paper establishes:
+
+\textbf{Theorem 2:} Let $0 < r \leq 1, C_0 \geq 0$ and $f_{ELM_{NW}}$ be the ELM estimator with Nadaraya-Watson activation. If $f_\rho \in F(r, C_0)$, $n = [m^{d/(d+2r)}]$, and $A \geq n^{1/d} \log n$, then:
+
+\begin{align}
+C_1 m^{-\frac{2r}{2r+d}} \leq \mathbb{E}_{\rho^m}\mathbb{E}_{\mu^n} \left( \|\pi_M(f_{ELM_{NW}}) - f_\rho\|_\rho^2 \right) \leq C_2 m^{-\frac{2r}{2r+d}} \log m
+\end{align}
+
+\subsection{ELM with Sigmoid Activation Functions}
+
+For bounded sigmoid activation functions $\phi(\beta_i, x) = \sigma(b(x - t_i))$ with $\beta_i = (b, t_i)$, where $\sigma$ is a bounded sigmoid function, $b > 0$, and $t_i$ drawn according to uniform distribution, the paper proves:
+
+\textbf{Theorem 3:} Let $0 < r \leq 1, f_\rho \in F(r, C_0)$ with $C_0 > 0$, and $f_{ELM_S}$ be the ELM estimator with sigmoid activation. If $d = 1$, $b$ satisfies $b \geq n h_D^{-1}$ (where $h_D$ is the mesh norm), and $n = [m^{1/(1+2r)}]$, then:
+
+\begin{align}
+C_1 m^{-\frac{2r}{2r+1}} \leq \mathbb{E}_{\rho^m}\mathbb{E}_{\mu^n} \left( \|\pi_M(f_{ELM_S}) - f_\rho\|_\rho^2 \right) \leq C_2 m^{-\frac{2r}{2r+1}} \log m
+\end{align}
+
+\subsection{Implications of Generalization Results}
+
+These theoretical findings demonstrate that ELM with appropriate activation functions can achieve the optimal generalization bound $O(m^{-2r/(2r+d)})$. This means ELM does not degrade the generalization capability of FNNs even when connections with and within hidden neurons are randomly fixed.
+
+A key observation is that the number of hidden neurons $n$ is closely related to the number of training samples $m$. For instance, when using polynomial activation functions, the optimal number of hidden neurons is $n = [m^{d/(d+2r)}]$.
+
+It's important to note that the generalization capability is measured in terms of double expectations $\mathbb{E}_{\rho^m}\mathbb{E}_{\mu^n}$. This indicates that on average (over all possible random assignments of hidden parameters), ELM performs as well as traditional FNNs, though individual implementations might vary.
+
+\section{Guaranteeing Weak Regularity of Hidden Layer Output Matrix}
+
+The paper addresses how to ensure the weak regularity of the hidden layer output matrix $H$, which is necessary for efficient application of the generalized inverse technique.
+
+\subsection{Polynomial Activation and Weak Regularity}
+
+\textbf{Theorem 4:} Assume the marginal distribution $\rho_X$ is absolutely continuous with respect to Lebesgue measure on $X$, and algebraic polynomial is used as the activation function, i.e., $\phi(\beta_i, x) = (\omega_i x + b_i)^s$. If $n \leq m$, then the hidden layer output matrix $H = (r_{ji})_{m \times n}$ is of full column rank almost surely, where $r_{ji} = (w_i x_j + b_i)^s$.
+
+This theorem guarantees that when using polynomial activation functions and ensuring the number of hidden neurons does not exceed the number of samples, the Moore-Penrose generalized inverse can be directly computed as $H^\dagger = (H^T H)^{-1} H^T$.
+
+\subsection{Regularization for Non-Polynomial Activations}
+
+For non-polynomial activation functions, the paper proposes using Tikhonov regularization to guarantee weak regularity without sacrificing generalization capability. The regularized ELM estimator is defined as:
+
+\begin{align}
+f_{ELM}^{(\lambda)}(x) = \sum_{i=1}^n \alpha_i^* \phi(\tilde{\beta}_i, x)
+\end{align}
+
+where $\alpha^*$ is the solution to:
+
+\begin{align}
+\alpha^* = \arg\min_\alpha \left\{\frac{1}{m} \|H\alpha - y\|_2^2 + \lambda \|\alpha\|_2^2\right\} = (H^T H + \lambda m I)^{-1} H^T y
+\end{align}
+
+Here, $\lambda := \lambda(m,n)$ is a regularization parameter.
+
+\textbf{Theorem 5:} Let $0 < r \leq 1, C_0 > 0, f_\rho \in F(r, C_0)$ and $f_{ELM}^{(\lambda)}$ be the regularized ELM estimator. Then:
+
+\begin{align}
+\mathbb{E}_{\rho^m}\mathbb{E}_{\mu^n} \left( \|\pi_M f_{ELM}^{(\lambda)} - f_\rho\|_\rho^2 \right) \leq C\frac{n(\log m - \log \lambda)}{m} + \inf_{f \in \mathcal{M}_n} \left\{\int_X (f(x) - f_\rho(x))^2 d\rho + \lambda \|f\|_{l^2}^2\right\}
+\end{align}
+
+For specific choices of activation functions and regularization parameters, the paper shows that regularized ELM maintains optimal generalization capability. For instance:
+
+\textbf{Corollary 1:} If Nadaraya-Watson activation is used with $\lambda = [m^{-1}]$ and $n = [m^{d/(d+2r)}]$, then:
+
+\begin{align}
+C_1 m^{-\frac{2r}{2r+d}} \leq \mathbb{E}_{\rho^m}\mathbb{E}_{\mu^n} \left( \|\pi_M(f_{ELM_{NW}}^{(\lambda)}) - f_\rho\|_\rho^2 \right) \leq C_2 m^{-\frac{2r}{2r+d}} \log m
+\end{align}
+
+\textbf{Corollary 2:} If sigmoid activation is used with $\lambda = [m^{-1}]$ and $n = [m^{1/(1+2r)}]$, then:
+
+\begin{align}
+C_1 m^{-\frac{2r}{2r+1}} \leq \mathbb{E}_{\rho^m}\mathbb{E}_{\mu^n} \left( \|\pi_M(f_{ELM_S}^{(\lambda)}) - f_\rho\|_\rho^2 \right) \leq C_2 m^{-\frac{2r}{2r+1}} \log m
+\end{align}
+
+\section{Numerical Examples and Results}
+
+The paper includes experimental verification of the theoretical findings using three UCI benchmark datasets: Abalone, Machine CPU, and Census (house8L). Three ELM variants were compared:
+
+\begin{itemize}
+    \item ELM: Standard ELM with sigmoid activation function
+    \item L2ELM: Regularized ELM with sigmoid activation function
+    \item PolyELM: ELM with polynomial activation function
+\end{itemize}
+
+The experiments showed that:
+
+\begin{itemize}
+    \item Both L2ELM and PolyELM exhibited stable training performance with increasing number of hidden neurons, while standard ELM with sigmoid activation became unstable.
+    
+    \item For testing performance (generalization), L2ELM and PolyELM showed consistently good results and remained stable as the number of hidden neurons increased. Standard ELM performed well only when the number of hidden neurons was within a suitable range and degraded beyond that range.
+    
+    \item The experiments confirmed that either using polynomial activation functions or employing regularization can effectively guarantee both the weak regularity of the hidden layer output matrix and good generalization performance.
+\end{itemize}
+
+These experimental results validate the theoretical findings that ELM with appropriate activation functions or regularization does not degrade generalization capability compared to traditional FNNs.
+
+\section{Implications}
+
+The theoretical assessment in this paper has several important implications for the use of ELM in practice:
+
+\begin{itemize}
+    \item \textbf{Proper activation selection:} The choice of activation function significantly affects ELM performance. Polynomial, Nadaraya-Watson, and sigmoid activations are proven to maintain optimal generalization capability.
+    
+    \item \textbf{Hidden neuron sizing:} The paper establishes a precise relationship between the optimal number of hidden neurons and the number of training samples. This relationship depends on the dimensionality of the input space and the smoothness of the target function.
+    
+    \item \textbf{Regularization benefits:} For non-polynomial activation functions, Tikhonov regularization effectively addresses the weak regularity issue without sacrificing generalization capability.
+    
+    \item \textbf{Computational advantage:} ELM offers significant complexity reduction compared to traditional FNNs by only training output weights while maintaining generalization performance, making it suitable for large-scale applications.
+    
+    \item \textbf{Theoretical justification:} The paper provides the first comprehensive theoretical justification for why ELM works in practice, explaining the surprising effectiveness of random feature mapping.
+\end{itemize}
+
+The analysis reveals that ELM's feasibility depends on both appropriate activation function selection and proper configuration of the number of hidden neurons relative to training samples. When properly configured, ELM achieves optimal generalization bounds comparable to traditional FNNs while maintaining significantly lower computational complexity.
+
+\end{document} 

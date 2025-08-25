@@ -1,0 +1,266 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{float}
+\usepackage{hyperref}
+
+\title{A Micro-Macro Decomposition-Based Asymptotic-Preserving\\Random Feature Method for Multiscale Radiative Transfer Equations}
+\author{Jingrun Chen, Zheng Ma, and Keke Wu}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+Radiative transfer equations (RTEs) model the propagation and interaction of radiation or particles within participating media, appearing in diverse fields including astrophysics, neutron transport, and optical tomography. The primary challenges in numerically solving RTEs stem from the high dimensionality of phase space, stiffness of collision terms, and most notably, multiscale features characterized by the Knudsen number $\varepsilon$, which spans from $O(1)$ (kinetic regime) to $\varepsilon \ll 1$ (diffusive regime).
+
+Traditional approaches for solving RTEs include deterministic methods like the discrete ordinates method (DOM) and spherical harmonics methods, as well as stochastic simulation methods like direct simulation Monte Carlo (DSMC). More recently, deep learning methods have shown potential for solving high-dimensional RTEs but face challenges in interpretability, generalization, and computational efficiency.
+
+The Random Feature Method (RFM) represents a promising alternative that bridges traditional numerical methods and deep learning approaches. However, the vanilla RFM struggles to efficiently resolve small-scale features in multiscale problems. This paper introduces the Asymptotic-Preserving Random Feature Method (APRFM), which employs a micro-macro decomposition strategy to effectively handle the multiscale nature of RTEs across different regimes.
+
+\section{Problem Formulation and RFM Limitations}
+
+\subsection{The Radiative Transfer Equation}
+
+The scaled stationary radiative transfer equation on a bounded Lipschitz domain $D \subset \mathbb{R}^d$ is given by:
+\begin{equation}
+v \cdot \nabla_x f(x,v) = \frac{\sigma_s(x)}{\varepsilon} L f(x,v) - \varepsilon \sigma_a(x) f(x,v) + \varepsilon Q(x,v), \quad (x,v) \in D \times S^{d-1}
+\end{equation}
+where $f(x,v)$ denotes the distribution function of particles at space position $x \in D$ and velocity direction $v \in S^{d-1}$, $Q(x,v)$ represents the source function, and $\sigma_s(x)$ and $\sigma_a(x)$ correspond to the scattering and absorption coefficients. The dimensionless parameter $\varepsilon > 0$ is the Knudsen number.
+
+The operator $L$ is defined as:
+\begin{equation}
+L f = \frac{1}{|S^{d-1}|} \int_{S^{d-1}} k(v,v')(f(v') - f(v)) \, dv'
+\end{equation}
+
+For well-posedness, the operator $L$ satisfies:
+\begin{itemize}
+    \item $\langle L f \rangle = 0, \forall f(v) \in L^2(S^{d-1})$, where $\langle h \rangle := \frac{1}{|S^{d-1}|} \int_{S^{d-1}} h(v') \, dv'$ 
+    \item $L$ is a self-adjoint and non-positive operator in $L^2(S^{d-1})$
+    \item The null space of $L$ is $\{f \in L^2(D \times S^{d-1}) : f = \langle f \rangle \}$
+\end{itemize}
+
+The inflow boundary is defined as:
+\begin{equation}
+\Gamma_- := \{(x,v) \in \partial D \times S^{d-1} | v \cdot n(x) < 0\}
+\end{equation}
+where $n(x)$ represents the outward normal vector to the boundary $\partial D$.
+
+\subsection{Limitations of Vanilla RFM for Small Scales}
+
+The vanilla RFM faces significant challenges in resolving small-scale features in the radiative transfer equation. To demonstrate this, consider a simple one-dimensional RTE:
+\begin{align}
+\varepsilon v \cdot \nabla_x f &= \langle f \rangle - f - \varepsilon v, \quad (x,v) \in [0,1] \times [-1,1]\\
+f(0, v > 0) &= 1, \quad f(1, v < 0) = 0
+\end{align}
+with exact solution $f_{ex}(x,v) = 1-x$.
+
+When applying RFM to this problem, numerical experiments reveal that:
+\begin{itemize}
+    \item For the kinetic regime ($\varepsilon = 1$), the RFM converges rapidly with increasing degrees of freedom.
+    \item For small-scale problems ($\varepsilon \ll 1$), the accuracy deteriorates dramatically, requiring substantially more degrees of freedom and collocation points.
+\end{itemize}
+
+The core challenge arises because when $\varepsilon \ll 1$, any function $f$ independent of $v$ that satisfies the inflow boundary condition (e.g., $f = (1-x)^n$ for $n \geq 2$) will yield:
+\begin{equation}
+\|\varepsilon v \cdot \nabla_x f - \langle f \rangle + f + \varepsilon v \|_2^2 = O(\varepsilon^2)
+\end{equation}
+while
+\begin{equation}
+\|f - f_{ex}\|_2^2 = O(1)
+\end{equation}
+
+This means that capturing the small-scale information $O(\varepsilon^2)$ requires a significant increase in both degrees of freedom and collocation points, leading to an ill-conditioned least squares problem that makes accurate solutions difficult to obtain.
+
+\section{Asymptotic-Preserving Random Feature Method}
+
+\subsection{Micro-Macro Decomposition Strategy}
+
+The APRFM employs a micro-macro decomposition strategy that decomposes the distribution function $f(x,v)$ into:
+\begin{equation}
+f(x,v) = \rho(x) + \varepsilon g(x,v)
+\end{equation}
+where $\rho(x) = \langle f(x,v) \rangle$ denotes the equilibrium part (macroscopic density), and $g(x,v)$ denotes the non-equilibrium part satisfying $\langle g(x,v) \rangle = 0$.
+
+Substituting this decomposition into the radiative transfer equation and using the properties of the operator $L$, we obtain the micro-macro system:
+\begin{align}
+\langle v \cdot \nabla_x g \rangle + \sigma_a \rho &= \langle Q \rangle\\
+v \cdot \nabla_x \rho + \varepsilon (Id - \Pi)(v \cdot \nabla_x g) &= \sigma_s L g - \varepsilon^2 \sigma_a g + \varepsilon (Q - \langle Q \rangle)
+\end{align}
+where $\Pi$ is the projection operator defined as $\Pi(\cdot)(v) = \langle \cdot \rangle$.
+
+\subsection{The APRFM Algorithm}
+
+In the APRFM, both $\rho(x)$ and $g(x,v)$ are approximated using the random feature method:
+\begin{align}
+\rho(x) &\approx \rho_M(x) = \sum_{i=1}^{M_\rho} \psi_i^\rho(x) \sum_{j=1}^{J_i^\rho} \rho_{ij} \varphi_{ij}^\rho(x)\\
+g(x,v) &\approx g_M(x,v) = \sum_{i=1}^{M_g} \psi_i^g(x,v) \sum_{j=1}^{J_i^g} g_{ij} \varphi_{ij}^g(x,v)
+\end{align}
+
+The coefficients $\{\rho_{ij}\}$ and $\{g_{ij}\}$ are determined by solving a least squares problem for the micro-macro system:
+\begin{equation}
+\min_{\theta} R_\varepsilon := R_\varepsilon^{int} + R_\varepsilon^{bdy}
+\end{equation}
+where:
+\begin{align}
+R_\varepsilon^{int} &= \sum_{k=1}^{N_{int}} \lambda_{int,1}^k |\langle v \cdot \nabla_x g_M \rangle(x_{int}^k) + \sigma_a(x_{int}^k) \rho_M(x_{int}^k) - \langle Q \rangle(x_{int}^k)|^2\\
+&+ \sum_{k=1}^{N_{int}} \lambda_{int,2}^k |v_{int}^k \cdot \nabla_x \rho_M(x_{int}^k) + \varepsilon (Id - \Pi)(v_{int}^k \cdot \nabla_x g_M(x_{int}^k, v_{int}^k))\\
+&- \sigma_s(x_{int}^k) L g_M(x_{int}^k, v_{int}^k) + \varepsilon^2 \sigma_a(x_{int}^k) g_M(x_{int}^k, v_{int}^k)\\
+&- \varepsilon(Q(x_{int}^k, v_{int}^k) - \langle Q \rangle(x_{int}^k))|^2\\
+R_\varepsilon^{bdy} &= \sum_{k=1}^{N_{bdy}} \lambda_{bdy}^k|\rho_M(x_{bdy}^k) + \varepsilon g_M(x_{bdy}^k, v_{bdy}^k) - f_{bdy}^k|^2
+\end{align}
+
+The linear operators of the micro-macro system can be defined as:
+\begin{align}
+T_{11}^\varepsilon \rho &= \sigma_a(x) \rho(x)\\
+T_{12}^\varepsilon g &= \langle v \cdot \nabla_x g(x,v) \rangle\\
+T_{21}^\varepsilon \rho &= v \cdot \nabla_x \rho(x)\\
+T_{22}^\varepsilon g &= \varepsilon (Id - \Pi)(v \cdot \nabla_x g(x,v)) - \sigma_s(x) L g(x,v) + \varepsilon^2 \sigma_a(x) g(x,v)
+\end{align}
+
+This leads to a linear system in matrix form:
+\begin{equation}
+\theta^* = \min_{\theta} \|A\theta - b\|_2^2
+\end{equation}
+where $\theta = [\rho, g]^T$ contains all the coefficients, and the matrix $A$ and vector $b$ are constructed from the operators and boundary conditions.
+
+\subsection{Algorithm Implementation}
+
+The APRFM algorithm involves the following steps:
+
+\begin{enumerate}
+    \item Initialize weights and biases of the neural networks $\{\varphi_{ij}^\rho\}$ and $\{\varphi_{ij}^g\}$ randomly according to uniform distribution $[-B, B]$ and keep them fixed.
+    
+    \item For interior and boundary collocation points, compute the values of the operators and functions to construct the matrix $A$ and vector $b$.
+    
+    \item Solve the least squares problem $\theta^* = \min_{\theta} \|A\theta - b\|_2^2$ to obtain the coefficients.
+    
+    \item Reconstruct the solution using $f(x,v) \approx \rho_M(x) + \varepsilon g_M(x,v)$.
+\end{enumerate}
+
+The method is asymptotic-preserving, meaning that as $\varepsilon \to 0$, the discrete formulation preserves the correct limiting behavior of the continuous problem.
+
+\section{Numerical Examples and Results}
+
+\subsection{One-Dimensional Examples}
+
+\subsubsection{Simple Radiative Transfer Problem}
+
+For the simple RTE considered earlier:
+\begin{align}
+\varepsilon v \cdot \nabla_x f &= \langle f \rangle - f - \varepsilon v, \quad (x,v) \in [0,1] \times [-1,1]\\
+f(0, v > 0) &= 1, \quad f(1, v < 0) = 0
+\end{align}
+
+The APRFM was tested across multiple scales: $\varepsilon = 10^{-2i}$ for $i = 1,2,3,4$. Results show:
+\begin{itemize}
+    \item The APRFM achieves high accuracy across all scales, with relative $\ell^2$ errors as low as $10^{-7}$.
+    \item Even with $\varepsilon = 10^{-16}$, the method maintains good accuracy with modest degrees of freedom.
+    \item The APRFM requires significantly fewer collocation points than the vanilla RFM to achieve comparable accuracy.
+\end{itemize}
+
+\subsubsection{Kinetic and Intermediate Regimes}
+
+For a problem without source term:
+\begin{align}
+\varepsilon v \cdot \nabla_x f &= \langle f \rangle - f, \quad (x,v) \in [0,1] \times [-1,1]\\
+f(0, v > 0) &= 1, \quad f(1, v < 0) = 0
+\end{align}
+
+The APRFM achieves relative $\ell^2$ errors of $7.87 \times 10^{-3}$ for $\varepsilon = 1$ and $5.70 \times 10^{-3}$ for $\varepsilon = 5 \times 10^{-1}$, with errors primarily concentrated at boundaries $x=0,1$ and $v=0$.
+
+Compared to the Asymptotic-Preserving Neural Network (APNN) method, the APRFM:
+\begin{itemize}
+    \item Achieves slightly lower relative $\ell^2$ error
+    \item Is an order of magnitude faster
+    \item Requires considerably fewer parameters
+\end{itemize}
+
+\subsubsection{Mixed-Scale Problem}
+
+For a problem with space-dependent Knudsen number:
+\begin{align}
+v \cdot \nabla_x f &= \frac{1}{\varepsilon(x)}(\langle f \rangle - f), \quad (x,v) \in [0,1] \times [-1,1]\\
+f(0, v > 0) &= 0.5, \quad f(1, v < 0) = 0
+\end{align}
+where $\varepsilon(x) = 10^{-2} + \frac{1}{2}[\tanh(6.5-11x) + \tanh(11x-4.5)]$ smoothly transitions from $O(10^{-3})$ to $O(1)$.
+
+The APRFM handles this mixed-scale problem effectively, achieving a relative $\ell^2$ error of $2.88 \times 10^{-2}$.
+
+\subsection{Two-Dimensional Examples}
+
+\subsubsection{Square Domain with Source Term}
+
+For a 2D problem with $x = (x_1, x_2) \in [-1,1]^2$, $v = (\cos(\alpha), \sin(\alpha))$:
+\begin{align}
+\varepsilon v \cdot \nabla_x f(x,v) &= \frac{1}{2\pi} \int_{|v|=1} f(x,v') \, dv' - f + \varepsilon^2 G(x,v)
+\end{align}
+with appropriate boundary conditions and source function $G(x,v) = (-\cos(\alpha) - \sin(\alpha)) \exp(-x-y)/\varepsilon$.
+
+The APRFM achieves relative $\ell^2$ errors for the density function $\rho(x)$ of $4.92 \times 10^{-3}$ for $\varepsilon = 1$ and $4.09 \times 10^{-3}$ for $\varepsilon = 10^{-3}$.
+
+\subsubsection{Square Domain with Constant Source}
+
+For a similar 2D domain but with source function $G(x,v) = 1/2$:
+The APRFM achieves relative $\ell^2$ errors of $3.01 \times 10^{-2}$ for $\varepsilon = 1$ and $4.19 \times 10^{-2}$ for $\varepsilon = 10^{-1}$.
+
+\subsubsection{Hollow Annular Domain}
+
+For a more complex geometry with domain $x = (x_1, x_2) \in [-1,1]^2 \setminus (-1/3, 1/3)^2$:
+The APRFM handles this non-convex domain effectively, achieving relative $\ell^2$ errors of $3.18 \times 10^{-4}$ for $\varepsilon = 1$ and $8.74 \times 10^{-5}$ for $\varepsilon = 5 \times 10^{-3}$.
+
+\section{Implications and Advantages}
+
+\subsection{Multiscale Robustness}
+
+The APRFM exhibits remarkable robustness across different scales, from the kinetic regime ($\varepsilon = O(1)$) to the diffusive regime ($\varepsilon \ll 1$). Unlike the vanilla RFM, which struggles with small-scale problems, the APRFM:
+\begin{itemize}
+    \item Maintains uniform accuracy across scales
+    \item Requires fewer degrees of freedom for comparable accuracy
+    \item Handles mixed-scale problems with space-dependent Knudsen numbers
+\end{itemize}
+
+\subsection{Computational Efficiency}
+
+Compared to both traditional numerical methods and deep learning approaches, the APRFM offers significant computational advantages:
+\begin{itemize}
+    \item Achieves high accuracy with fewer collocation points than vanilla RFM
+    \item Is approximately an order of magnitude faster than the APNN method
+    \item Requires considerably fewer parameters than deep neural networks
+    \item Avoids expensive training processes associated with deep learning
+\end{itemize}
+
+\subsection{Flexibility and Adaptability}
+
+The APRFM demonstrates adaptability to various problem configurations:
+\begin{itemize}
+    \item Works effectively in both one- and two-dimensional problems
+    \item Handles complex geometries including non-convex domains
+    \item Accommodates different boundary conditions and source terms
+    \item Adapts to different Partition of Unity functions and activation functions
+\end{itemize}
+
+\subsection{Potential Extensions}
+
+The APRFM has promising potential for extension to:
+\begin{itemize}
+    \item Time-dependent kinetic equations
+    \item Nonlinear kinetic equations
+    \item Problems with more complex geometries
+    \item Higher-dimensional problems
+\end{itemize}
+
+\subsection{Remaining Challenges}
+
+Despite its advantages, the APRFM faces some challenges:
+\begin{itemize}
+    \item The least squares problem can become ill-conditioned for very complex problems
+    \item Selection of optimal random parameters, activation functions, and PoU functions remains empirical
+    \item Theoretical analysis of convergence and stability is still an open question
+    \item Sampling strategies and domain decomposition techniques need further refinement
+\end{itemize}
+
+\end{document} 

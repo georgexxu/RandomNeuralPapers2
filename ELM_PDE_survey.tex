@@ -1,0 +1,121 @@
+
+\documentclass{article}
+\usepackage{amsmath,amssymb,graphicx}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\title{Survey of Extreme Learning Machine (ELM) Papers for Computational PDEs}
+\author{Compiled by ChatGPT}
+\date{\today}
+\begin{document}
+\maketitle
+
+\section{Igelnik \& Pao (1995): Stochastic Choice of Basis Functions and the Functional–Link Net}
+\subsection*{Algorithmic Idea}
+The paper introduces the \emph{random vector functional–link} (RVFL) network, a single–hidden–layer model in which the inner–layer parameters $(\boldsymbol{w}_k,b_k)$ are \emph{sampled once} from a user–chosen distribution and \emph{kept fixed}.  Only the output weights $\alpha_k$ are trained.  Function approximation is interpreted as Monte–Carlo quadrature of an integral representation
+\begin{equation}
+f(\boldsymbol x)=\int_V T[f](\lambda)\,G_{\lambda}(\boldsymbol x)\,d\lambda\approx
+\frac{|V|}{n}\sum_{k=1}^n T[f](\lambda_k)\,G_{\lambda_k}(\boldsymbol x),
+\end{equation}
+so the expected $L_2$ error decays like $\mathcal O(n^{-1/2})$ independently of input dimension.
+
+\subsection*{Theory}
+\begin{itemize}
+\item RVFL is a universal approximator for $C(K)$ on bounded $K\subset\mathbb R^d$.
+\item Convergence rate in mean–square norm is $C/\sqrt n$ with $C$ depending on the variance of the integrand but \emph{not} on $d$.
+\end{itemize}
+
+\subsection*{Numerical Evidence}
+Experiments on synthetic functions (e.g.\ Poisson kernel on $[-\pi,\pi]$) confirm the $n^{-1/2}$ decay and show orders–of–magnitude speed‑ups versus gradient descent MLPs.
+
+\section{Huang et al.\ (2006): Extreme Learning Machine—Theory and Applications}
+\subsection*{Algorithm}
+\begin{enumerate}
+\item Draw $\{\boldsymbol w_k,b_k\}_{k=1}^N$ i.i.d.\ from a continuous distribution.
+\item Compute hidden matrix $H_{jk}=g(\boldsymbol w_k^\top\boldsymbol x_j+b_k)$.
+\item Solve $H\beta=T$ in the least–squares sense via Moore–Penrose pseudo–inverse: $\beta=H^{\dagger}T$.
+\end{enumerate}
+
+\subsection*{Key Theoretical Results}
+\begin{itemize}
+\item Any SLFN with infinitely differentiable activation reaches \emph{zero training error} with at most $N$ hidden nodes for $N$ samples.
+\item Among all LS solutions ELM finds the minimum‑norm output weights, favouring generalisation.
+\end{itemize}
+
+\subsection*{Benchmarks}
+Across $28$ UCI tasks, ELM trains $\approx10^3$–$10^5$ times faster than BP while matching or exceeding generalisation accuracy; on the $10\,000$–sample MNIST subset it reaches $2.09\%$ test error in $2.1$\,s.
+
+\section{Liu et al.\ (2015): Is Extreme Learning Machine Feasible? (Part I)}
+\subsection*{Contributions}
+\begin{itemize}
+\item Provides \emph{generalisation bounds}: with polynomial or sigmoid activations, ELM attains the optimal $m^{-2r/(2r+d)}$ rate (Sobolev smoothness $r$).
+\item Estimates the required hidden width $n=\mathcal O(m^{d/(2r+d)}\log m)$ to reach that rate.
+\item Proves full‑rank of the hidden matrix for polynomial activations, guaranteeing pseudo‑inverse solvability.
+\end{itemize}
+
+\subsection*{Numerical Validation}
+Simulations on synthetic regression with varying $d$ corroborate the predicted rates and confirm the hidden matrix rank behaviour.
+
+\section{Dwivedi \& Srinivasan (2020): Physics‑Informed Extreme Learning Machine (PIELM)}
+\subsection*{Algorithm}
+PIELM minimises the composite loss
+\(
+\mathcal L=\| \mathcal N[u_\theta]\|_{2,\Omega_{\text{int}}}^2+\|u_\theta-g\|_{2,\partial\Omega}^2
+\)
+where $\mathcal N$ is the PDE residual. Hidden parameters are random (ELM) so training reduces to a \emph{linear} LS problem for the output weights.  The authors also propose DPIELM—domain‑partitioned PIELM—for large domains.
+
+\subsection*{Findings}
+\begin{itemize}
+\item For Poisson and advection–diffusion ($d=3$–10) PIELM matches PINN accuracy while being $\approx1000\times$ faster.
+\item Exponential error decay w.r.t.\ hidden width until saturation.
+\end{itemize}
+
+\section{Dwivedi \& Srinivasan (2020): Biharmonic Equation in Complicated Geometries with PIELM}
+\subsection*{Highlights}
+Extends PIELM to fourth‑order PDEs with mixed boundary data.  On irregular 2‑D domains (star‑shaped, crescent) the method achieves $<10^{-5}$ $L^\infty$ error using $\lesssim 1$ s training time—orders faster than PINN and competitive with adaptive FEM without meshing overhead.
+
+\section{Li et al.\ (2022): ELM with Kernels for Elliptic PDEs}
+\subsection*{Method}
+Replaces random feature map by \emph{kernel ELM} (KELM); the solution is expressed
+\(
+u(x)=\sum_{i=1}^N \alpha_i K(x,x_i)
+\)
+with $\boldsymbol\alpha=(H+\lambda I)^{-1}T$.  Hyper‑parameters (regularisation $\lambda$, kernel width) selected by grid search.
+
+\subsection*{Experiments}
+On 3 test Poisson–type problems KELM outperforms wavelet NN and butterfly‑optimised WNN.  Mean absolute error drops below $10^{-4}$ with only $N=200$ interior points.
+
+\section{Dong \& Li (2021): Local Extreme Learning Machines and Domain Decomposition}
+\subsection*{Algorithm}
+\begin{enumerate}
+\item Partition domain into sub‑domains; on each use a shallow ELM with $M$ random neurons.
+\item Impose $C^k$ continuity across interfaces.
+\item Form global LS (linear or nonlinear) for output weights; solve via block time‑marching for unsteady PDEs.
+\end{enumerate}
+
+\subsection*{Key Observations}
+Error decays nearly exponentially with $M$ or sub‑domain count. For Burgers and Navier–Stokes examples locELM attains $10^{-7}$ error and beats FEM and PINN in both accuracy and CPU (up to $100\times$).
+
+\section{Dong \& Yang (2021): Optimising the Random‑Coefficient Magnitude $R_m$}
+\subsection*{Contribution}
+Uses differential evolution to minimise the linear‑system residual $\|H\beta-T\|_2$ over $R_m$ (single or per‑layer). Multi‑$R_m$ improves accuracy by up to one order and cuts training time $>50\%$.
+
+\section{Ni \& Dong (2022): Hidden‑Layer Concatenated ELM (HLConcELM)}
+\subsection*{Idea}
+Expose \emph{all} hidden nodes to the output layer via logical concatenation; this guarantees non‑decreasing representational capacity as layers widen/stack.  HLConcELM retains linear training yet achieves high accuracy even when the final hidden layer is narrow.
+
+\subsection*{Results}
+For Poisson, Helmholtz and Burgers equations HLConcELM with narrow last layer achieves the same $10^{-8}$ accuracy as conventional wide‑layer ELM but with $60\%$ fewer parameters.
+
+\section{Dong \& Wang (2023): Inverse Parametric PDEs with Random‑Weight NNs}
+\subsection*{Algorithms}
+Three strategies:
+\begin{enumerate}
+\item \textbf{NLLSQ}: joint optimisation of inverse parameters and output weights via perturbed Gauss–Newton LS.
+\item \textbf{VarPro‑F1}: eliminate inverse params, solve for NN weights by LS, then invert linear system for parameters.
+\item \textbf{VarPro‑F2}: eliminate NN weights, solve reduced problem for inverse params, optional Newton loop for nonlinear PDEs.
+\end{enumerate}
+
+\subsection*{Performance}
+On 1‑D inverse advection and 2‑D Poisson coefficient‑recovery problems, parameter error drops exponentially with collocation points; noise‑robust variants maintain $<2\%$ error at $5\%$ Gaussian noise—significantly better than PINN baselines.
+
+\end{document}

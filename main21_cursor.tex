@@ -1,0 +1,470 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{float}
+\usepackage{hyperref}
+
+\title{Random Feature Method: Bridging Traditional and Machine Learning-based Algorithms for Solving PDEs}
+\author{Jingrun Chen, Xurong Chi, Weinan E, and Zhouwang Yang}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+The Random Feature Method (RFM) represents a significant advancement in solving partial differential equations (PDEs), effectively bridging the gap between traditional algorithms and machine learning-based approaches. While traditional methods like finite difference, finite element, and spectral methods have been successful, they often lack flexibility when dealing with complex problems. Conversely, deep learning methods have shown promise for high-dimensional PDEs but struggle with robustness for low-dimensional problems.
+
+The RFM combines well-established ideas from both paradigms:
+\begin{itemize}
+    \item Representation of approximate solutions using random feature functions
+    \item Collocation method to handle the PDE
+    \item Penalty method to treat boundary conditions on equal footing with the PDE
+    \item Multi-scale representation and weight rescaling in the loss function
+\end{itemize}
+
+This approach offers several advantages: it is mesh-free (beneficial for complex geometries), achieves spectral accuracy, and can be implemented efficiently without the need for expensive optimization processes typical in neural network training.
+
+\section{Algorithm Details}
+
+\subsection{Problem Formulation}
+Consider a general PDE problem:
+\begin{equation}
+\begin{cases}
+Lu(x) = f(x) & x \in \Omega \\
+Bu(x) = g(x) & x \in \partial\Omega
+\end{cases}
+\end{equation}
+where $\Omega$ is a bounded and connected domain in $\mathbb{R}^d$, $L$ is a differential operator, and $B$ represents boundary conditions.
+
+\subsection{Loss Function}
+RFM uses a strong form of the PDE at collocation points to construct the loss function. Two sets of collocation points are used:
+\begin{itemize}
+    \item $C_I$: interior points in $\Omega$
+    \item $C_B$: boundary points on $\partial\Omega$
+\end{itemize}
+
+The loss function is defined as:
+\begin{equation}
+\text{Loss} = \sum_{x_i \in C_I} \sum_{k=1}^{K_I} \lambda_i^{k,I} \|L_k u(x_i) - f_k(x_i)\|_{l^2}^2 + \sum_{x_j \in C_B} \sum_{\ell=1}^{K_B} \lambda_j^{\ell,B} \|B_\ell u(x_j) - g_\ell(x_j)\|_{l^2}^2
+\end{equation}
+
+where $\{\lambda_i^{k,I}\}$ and $\{\lambda_j^{\ell,B}\}$ are penalty parameters. This formulation allows flexible treatment of boundary conditions without requiring the feature functions to satisfy boundary conditions explicitly.
+
+\subsection{Random Feature Functions}
+The approximate solution $u_M$ is constructed as a linear combination of $M$ network basis functions:
+\begin{equation}
+u_M(x) = \sum_{i=1}^M u_m \phi_m(x)
+\end{equation}
+
+For vector-valued solutions, each component is approximated using this approach. The basis functions are:
+\begin{equation}
+\phi_m(x) = \sigma(k_m \cdot x + b_m)
+\end{equation}
+where $\sigma$ is a nonlinear activation function (e.g., tanh, sin, cos), and $k_m$, $b_m$ are random but fixed parameters.
+
+\subsection{Partition of Unity and Local Random Feature Models}
+To accommodate local variations in solutions, RFM constructs local solutions using partition of unity (PoU):
+
+\begin{enumerate}
+    \item Start with a set of points $\{x_n\}_{n=1}^{M_p} \subset \Omega$ as centers for partition components
+    \item For each center, construct normalized coordinates: $\tilde{x} = \frac{1}{r_n}(x-x_n)$
+    \item Create random feature functions: $\phi_{nj}(x) = \sigma(k_{nj} \cdot \tilde{x} + b_{nj})$
+    \item Construct PoU functions $\psi_n(x)$ (either $\psi^a$ or $\psi^b$ functions described in the paper)
+    \item Combine local models: $u_M(x) = \sum_{n=1}^{M_p} \psi_n(x) \sum_{j=1}^{J_n} u_{nj} \phi_{nj}(x)$
+\end{enumerate}
+
+\subsection{Multi-scale Basis}
+To better capture large-scale features, RFM adds global components to the PoU-based local basis:
+\begin{equation}
+u_M(x) = u_g(x) + \sum_{n=1}^{M_p} \psi_n(x) \sum_{j=1}^{J_n} u_{nj} \phi_{nj}(x)
+\end{equation}
+where $u_g$ is a global random feature function.
+
+\subsection{Adaptive Basis}
+The ideal distribution for feature vectors should reflect the spectral distribution of the solution. RFM uses an adaptive basis approach:
+\begin{itemize}
+    \item Perform spectral analysis of the forcing term (if available)
+    \item Use results to guide the selection of spectral distribution for feature vectors
+    \item This is particularly effective when sin/cos activation functions are used
+\end{itemize}
+
+\subsection{Optimization and Rescaling}
+The optimization problem is solved using standard least-squares algorithms. A crucial component is rescaling the penalty parameters to ensure each term in the loss function has similar magnitude:
+\begin{align}
+\lambda_i^{k,I} &= c \cdot \max_{1 \leq n \leq M_p} \max_{1 \leq j' \leq J_n} \max_{1 \leq k' \leq K_I} |L_k(\phi_{nj'}^{k'}(x_i)\psi_n(x_i))| \\
+\lambda_j^{\ell,B} &= c \cdot \max_{1 \leq n \leq M_p} \max_{1 \leq j' \leq J_n} \max_{1 \leq \ell' \leq K_I} |B_\ell(\phi_{nj'}^{\ell'}(x_j)\psi_n(x_j))|
+\end{align}
+where $c$ is a universal constant (typically set to 100).
+
+\subsection{Collocation Points}
+The collocation points are selected based on the geometric representation of the domain:
+\begin{itemize}
+    \item For explicit parametric boundaries, use uniform grid points in parameter space
+    \item For implicit geometric representations, identify interior points and define an energy function
+    \item In simple cases, uniformly sample points over a rectangle containing $\Omega$ and delete points outside $\Omega$
+\end{itemize}
+
+\subsection{Complete Algorithm}
+\begin{algorithm}[H]
+\caption{The Random Feature Method}
+\begin{algorithmic}[1]
+\STATE Construct $M$ random feature functions $\{\phi_m\}$ and the PoU $\{\psi_n\}$
+\STATE Sample points $C = C_I \cup C_B$ according to predetermined rule
+\STATE Evaluate equations at $C_I$ and boundary conditions at $C_B$
+\STATE Construct loss function (not necessarily equal to $N$)
+\STATE Solve the optimization problem
+\STATE Return $u_M$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Theoretical Findings}
+
+\subsection{Spectral Accuracy}
+The numerical results consistently demonstrate that RFM achieves spectral accuracy (exponential convergence) in terms of the number of random feature functions. This is in contrast to PINN, which typically plateaus at an error of around $10^{-3}$.
+
+\subsection{Feature Vector Distribution}
+The theoretical analysis indicates that as long as the support of the distribution for the feature vectors approximately covers the frequency domain of the true solution, RFM produces stable results. Interestingly, random sampling generally outperforms deterministic choices of feature vectors.
+
+\subsection{Random vs. Deterministic Feature Vectors}
+The paper provides theoretical insight on why random sampling performs better than deterministic choices, even in low-dimensional problems where traditional numerical analysis would suggest otherwise. This finding challenges conventional wisdom about quadrature schemes being superior to Monte Carlo methods for low-dimensional problems.
+
+\subsection{Error Distribution}
+Error analysis reveals distinct patterns based on the choice of partition of unity functions:
+\begin{itemize}
+    \item With $\psi^a$, errors concentrate near interfaces between macro-elements
+    \item With $\psi^b$, errors tend to concentrate at domain boundaries
+\end{itemize}
+
+\section{Numerical Examples and Results}
+
+\subsection{One-dimensional Helmholtz Equation}
+Consider the Helmholtz equation with Dirichlet boundary conditions on $\Omega = [0,8]$:
+\begin{equation}
+\begin{cases}
+\frac{d^2 u(x)}{dx^2} - \lambda u(x) = f(x) & x \in \Omega \\
+u(0) = c_1, u(8) = c_2
+\end{cases}
+\end{equation}
+
+Results for this problem show:
+\begin{itemize}
+    \item RFM achieves spectral accuracy (error reduced to $10^{-12}$ with sufficient basis functions)
+    \item PINN plateaus at an error of around $10^{-3}$
+    \item Multi-scale basis functions improve accuracy, particularly for low-frequency components
+\end{itemize}
+
+\subsection{Two-dimensional Poisson Equation}
+For the Poisson equation on $\Omega = [0,1] \times [0,1]$:
+\begin{equation}
+\begin{cases}
+\Delta u(x,y) = f(x,y) & (x,y) \in \Omega \\
+\text{with Dirichlet boundary conditions}
+\end{cases}
+\end{equation}
+
+The RFM achieves exponential convergence, with the error distribution depending on the choice of PoU functions.
+
+\subsection{Elasticity Problems}
+\subsubsection{Timoshenko Beam Problem}
+This classic problem tests the performance on a beam with size $L \times D$ subject to parabolic traction at the free end.
+
+Results show:
+\begin{itemize}
+    \item RFM with rescaling achieves spectral accuracy (error down to $10^{-12}$)
+    \item Local extreme learning machine (locELM) plateaus at errors around $10^{-3}$ to $10^{-4}$
+    \item The rescaling strategy proves crucial for maintaining accuracy
+\end{itemize}
+
+\subsubsection{Complex Geometry Problem}
+An elasticity problem on a square domain with 40 holes of varying radii tests performance on complex geometries.
+
+Results show:
+\begin{itemize}
+    \item RFM maintains spectral accuracy despite the complex domain
+    \item Error reduces to $10^{-7}$ with sufficient basis functions
+    \item locELM's error remains at $10^{-3}$ to $10^{-2}$
+\end{itemize}
+
+\subsection{Comparison with Finite Element Method (FEM)}
+Two elasticity problems compare RFM with adaptive FEM:
+
+\begin{enumerate}
+    \item A domain with two disk cutouts and a semi-disk:
+    \begin{itemize}
+        \item Difference between RFM and FEM solutions is about 1\%
+        \item Both methods show consistent convergence behavior
+    \end{itemize}
+    
+    \item The complex domain with 40 holes:
+    \begin{itemize}
+        \item FEM faces difficulties generating a suitable mesh, particularly for a cluster of nearly touching holes
+        \item Removing the problematic cluster causes approximately 50\% error
+        \item RFM handles the problem straightforwardly, with error reducing to about 5\%
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Homogenization Problem}
+The elliptic equation over a unit disk with a coefficient that lacks clear scale separation:
+\begin{equation}
+\begin{cases}
+-\text{div}(a(x)\nabla u(x)) = f(x) & x \in \Omega \\
+u(x) = 0 & x \in \partial\Omega
+\end{cases}
+\end{equation}
+where $a(x) = e^{h(x)}$ and $h(x)$ is a sum of random sinusoidal functions.
+
+RFM effectively handles this multi-scale problem and shows clear convergence behavior.
+
+\subsection{Stokes Flow Problems}
+\subsubsection{Problem with Explicit Solution}
+For the Stokes equations:
+\begin{equation}
+\begin{cases}
+-\Delta u(x) + \nabla p(x) = f(x) & x \in \Omega \\
+\nabla \cdot u(x) = 0 & x \in \Omega \\
+u(x) = U(x) & x \in \partial\Omega
+\end{cases}
+\end{equation}
+
+Results show:
+\begin{itemize}
+    \item RFM achieves spectral accuracy for velocity and pressure fields
+    \item The method automatically bypasses issues of rank deficiency that often arise in spectral methods
+\end{itemize}
+
+\subsubsection{Channel Flows with Complex Obstacles}
+Tests on four sets of complex obstacles show:
+\begin{itemize}
+    \item Numerical convergence in all cases
+    \item Difference with respect to reference solutions is about 1\% for velocity and pressure
+    \item For uniformly distributed holes, the difference drops to 0.01\%
+\end{itemize}
+
+\section{Implications and Advantages}
+
+\subsection{Flexibility vs. Traditional Methods}
+RFM addresses several limitations of traditional algorithms:
+\begin{itemize}
+    \item Removes the constraint that the number of free parameters must equal the number of conditions
+    \item Does not require basis functions to satisfy particular boundary conditions
+    \item Avoids the need for tensor-product form in basis function construction
+    \item Treats boundary conditions in the same fashion as the PDE
+\end{itemize}
+
+\subsection{Robustness vs. Neural Network Methods}
+RFM overcomes limitations of neural network-based approaches:
+\begin{itemize}
+    \item Achieves systematic accuracy improvement, unlike methods like PINN that plateau
+    \item Avoids non-convexity issues in loss functions that make training difficult
+    \item Uses multi-scale representation instead of a single global representation
+\end{itemize}
+
+\subsection{Effectiveness for Complex Geometry}
+The method excels at problems with complex geometries by:
+\begin{itemize}
+    \item Eliminating the need for complex mesh generation
+    \item Allowing flexible treatment of boundary conditions
+    \item Maintaining high accuracy even for domains with nearly touching boundaries
+\end{itemize}
+
+\subsection{Computational Efficiency}
+The RFM approach offers significant computational advantages:
+\begin{itemize}
+    \item Does not require expensive optimization processes
+    \item Number of terms scales with solution complexity rather than dimensionality
+    \item Can operate with fewer parameters than conditions using least squares framework
+    \item Achieves high accuracy with relatively few basis functions
+\end{itemize}
+
+\section{Future Research Directions}
+Several promising research directions emerge from this work:
+\begin{itemize}
+    \item Developing better techniques for distributing collocation points on complex surfaces in 3D
+    \item Investigating preconditioning and reformulation techniques to improve condition numbers
+    \item Further understanding why random feature vectors outperform deterministic choices
+    \item Extending to higher-dimensional and multi-scale problems
+\end{itemize}
+
+\section{Linearized Networks approximation of Sobolev Spaces}
+
+\subsection{Introduction and Background}
+
+This paper presents fundamental theoretical results about shallow neural networks with ReLU$^k$ activation functions. The work focuses on linearized shallow networks, where inner parameters are fixed and only linear coefficients are optimized, demonstrating they can achieve optimal approximation rates in Sobolev spaces.
+
+The standard shallow ReLU$^k$ neural network function class is defined as:
+\begin{equation}
+\Sigma_n^k = \left\{\sum_{j=1}^n a_j \sigma_k(\theta_j \cdot \tilde{x}) : \theta_j \in \mathbb{S}^d, a_j \in \mathbb{R} \right\}
+\end{equation}
+where $\tilde{x} = \begin{pmatrix} x \\ 1 \end{pmatrix}$ and $\theta_j = \begin{pmatrix} w_j \\ b_j \end{pmatrix}$. The stable version with bounded parameters is:
+\begin{equation}
+\Sigma_{n,M}^k = \left\{\sum_{j=1}^n a_j \sigma_k(\theta_j \cdot \tilde{x}) : \theta_j \in \mathbb{S}^d, \sum_{j=1}^n |a_j| \leq M \right\}
+\end{equation}
+
+The paper introduces and analyzes the finite neuron space (FNS), a linear subset of $\Sigma_n^k$:
+\begin{equation}
+L_n^k = L_n^k(\{\theta_j^*\}_{j=1}^n) = \text{span} \{\phi_1, \ldots, \phi_n\}
+\end{equation}
+where $\phi_j(x) = \sigma_k(\theta_j^* \cdot \tilde{x})$ with predetermined parameters $\{\theta_j^*\}_{j=1}^n \subset \mathbb{S}^d$. The constrained version is:
+\begin{equation}
+L_{n,M}^k = \left\{\sum_{j=1}^n a_j \phi_j : \left(\sum_{j=1}^n a_j^2\right)^{1/2} \leq M \right\}
+\end{equation}
+
+\subsection{Main Theoretical Results}
+
+The paper establishes three key theoretical results:
+
+\subsubsection{Novel Integral Representation of Sobolev Spaces}
+
+The paper proves that Sobolev spaces $H^{d+2k+1/2}(\Omega)$ can be characterized through an integral representation using ReLU$^k$ functions:
+\begin{equation}
+H^{d+2k+1/2}(\Omega) = \left\{\int_{\mathbb{S}^d} \sigma_k(\theta \cdot \tilde{x}) \psi(\theta) d\theta : \psi \in L^2(\mathbb{S}^d) \right\}
+\end{equation}
+
+This representation provides a direct link between Sobolev spaces and neural networks, showing that for any $f \in H^{d+2k+1/2}(\Omega)$, there exists $\psi \in L^2(\mathbb{S}^d)$ such that:
+\begin{equation}
+f(x) = \int_{\mathbb{S}^d} \sigma_k(\theta \cdot \tilde{x}) \psi(\theta) d\theta
+\end{equation}
+
+with the norm equivalence:
+\begin{equation}
+\|f\|_{H^{d+2k+1/2}(\Omega)} \simeq \inf_{\psi \in L^2(\mathbb{S}^d)} \{\|\psi\|_{L^2(\mathbb{S}^d)} : f(x) = \int_{\mathbb{S}^d} \sigma_k(\theta \cdot \tilde{x}) \psi(\theta) d\theta\}
+\end{equation}
+
+\subsubsection{Optimal Approximation Rates for Linearized Networks}
+
+The paper demonstrates that linearized shallow networks with well-distributed parameters achieve optimal approximation rates. Specifically, for well-distributed parameters $\{\theta_j^*\}_{j=1}^n \subset \mathbb{S}^d$ and any $f \in H^{d+2k+1/2}(\Omega)$, with $M \simeq \|f\|_{H^{d+2k+1/2}(\Omega)}$:
+\begin{equation}
+\inf_{f_n \in L_{n,M}^k} \|f - f_n\|_{L^2(\Omega)} \lesssim n^{-1/2-2k+1/2d} \|f\|_{H^{d+2k+1/2}(\Omega)}
+\end{equation}
+
+A crucial finding is that this rate matches the optimal approximation rate for nonlinear shallow networks (up to logarithmic factors), showing linearized networks are as powerful as their nonlinear counterparts for functions in appropriate Sobolev spaces.
+
+\subsubsection{Coefficient Bound Estimates}
+
+The paper establishes the important coefficient estimate:
+\begin{equation}
+\sqrt{n}\|a\|_2 \lesssim \|f\|_{H^{d+2k+1/2}(\Omega)}
+\end{equation}
+
+This bound is essential for practical applications, particularly in generalization analysis, as it ensures numerical stability and provides control over the complexity of the approximating functions.
+
+\subsection{Algorithmic Approach}
+
+The paper focuses on a linearized approach to neural network approximation, which can be summarized algorithmically:
+
+\begin{enumerate}
+    \item Select a set of well-distributed parameters $\{\theta_j^*\}_{j=1}^n \subset \mathbb{S}^d$, where the mesh size $h = \max_{\theta \in \mathbb{S}^d} \min_{1 \leq j \leq n} \rho(\theta, \theta_j^*)$ satisfies $h \lesssim n^{-1/d}$
+    
+    \item For these fixed parameters, construct the finite neuron space:
+    \begin{equation}
+    L_n^k = \text{span}\{\sigma_k(\theta_1^* \cdot \tilde{x}), \ldots, \sigma_k(\theta_n^* \cdot \tilde{x})\}
+    \end{equation}
+    
+    \item For a target function $f \in H^{d+2k+1/2}(\Omega)$, find the approximation $f_n \in L_{n,M}^k$ by solving the convex least squares problem:
+    \begin{equation}
+    f_n = \arg\min_{g \in L_{n,M}^k} \|f - g\|_{L^2(\Omega)}
+    \end{equation}
+    where $M \simeq \|f\|_{H^{d+2k+1/2}(\Omega)}$
+\end{enumerate}
+
+This approach transforms the challenging non-convex optimization problem of training full neural networks into a simpler convex optimization problem that can be solved efficiently and reliably.
+
+\section{Theoretical Improvements to Random Feature Methods}
+
+The theoretical results established for linearized networks with ReLU$^k$ activation functions provide a rigorous mathematical foundation that can significantly enhance Random Feature Methods (RFM) for solving PDEs. These insights offer several promising avenues for improving RFM algorithms:
+
+\subsection{Deterministic Parameter Selection}
+
+A key insight from the theoretical analysis is that the effectiveness of randomized methods stems primarily from the well-distributed nature of randomly generated parameters rather than randomness itself. This suggests several improvements to the current RFM approach:
+
+\begin{itemize}
+    \item \textbf{Quasi-Random Sequences}: Instead of uniform random sampling for feature vectors, using low-discrepancy sequences (such as Sobol or Halton sequences) could better guarantee the well-distributed property with fewer points. This aligns with the theoretical optimality condition $h \lesssim n^{-1/d}$ where $h$ is the mesh size in parameter space.
+    
+    \item \textbf{Optimal Parameter Density}: The theoretical analysis provides a concrete guideline for determining the number of feature functions needed based on the dimension of the problem and desired accuracy, replacing the current heuristic approaches in RFM.
+    
+    \item \textbf{Error-Guided Adaptive Refinement}: Starting with a coarse distribution of parameters and progressively refining in regions where the approximation error is high, guided by the theoretical error bounds.
+\end{itemize}
+
+These approaches could reduce the variance in RFM performance across different initializations, making the method more reliable and predictable for practical applications.
+
+\subsection{ReLU$^k$ Activation Functions}
+
+The current RFM implementations typically use activation functions like tanh, sin, or cos. The theoretical analysis specifically establishes optimal approximation properties for ReLU$^k$ functions when approximating functions in Sobolev spaces. This suggests:
+
+\begin{itemize}
+    \item \textbf{ReLU$^k$ Basis Functions}: Incorporating ReLU$^k$ functions as basis elements in RFM, particularly for problems where the solution is known to belong to specific Sobolev spaces.
+    
+    \item \textbf{Activation Order Selection}: Choosing the order $k$ based on the expected regularity of the solution, with higher $k$ values for smoother solutions.
+    
+    \item \textbf{Hybrid Activation Approach}: Combining different types of activation functions within the same model—for example, using ReLU$^k$ for general function approximation properties and sinusoidal functions for capturing periodic components.
+\end{itemize}
+
+This approach would bring theoretical guarantees to the choice of activation functions in RFM, replacing the current heuristic selection methods with mathematically grounded decisions.
+
+\subsection{Theoretically-Guided Rescaling Strategies}
+
+The norm equivalence result from the integral representation of Sobolev spaces provides insights that can improve the rescaling strategies in RFM's loss function:
+
+\begin{itemize}
+    \item \textbf{Sobolev-Based Weighting}: Current RFM typically uses a universal constant (often set to 100) for rescaling. A more theoretically grounded approach would adjust penalty parameters based on the Sobolev regularity of the expected solution.
+    
+    \item \textbf{Local Adaptivity}: Implementing domain-specific rescaling that adapts based on local solution properties, particularly beneficial for multi-scale problems or solutions with sharp transitions.
+    
+    \item \textbf{Regularization Informed by Theory}: Using the coefficient bound estimate $\sqrt{n}\|a\|_2 \lesssim \|f\|_{H^{d+2k+1/2}(\Omega)}$ to guide the choice of regularization parameters in the least squares problem.
+\end{itemize}
+
+These refinements could lead to more stable optimization processes and improved accuracy, particularly for problems with varying solution regularity across the domain.
+
+\subsection{Optimized Collocation Strategies}
+
+The approximation theory established for well-distributed parameters provides guidance for more efficient collocation point selection:
+
+\begin{itemize}
+    \item \textbf{Minimal Point Selection}: Using the theoretical approximation rate $n^{-1/2-2k+1/2d}$ to determine the minimal number of collocation points needed to achieve a desired accuracy.
+    
+    \item \textbf{Strategic Point Placement}: Instead of uniform or random sampling of collocation points, placing points strategically based on the expected behavior of the solution and the theoretical properties of the basis functions.
+    
+    \item \textbf{Dimension-Adaptive Sampling}: Adjusting collocation point density based on dimensional sensitivity revealed by the approximation theory, potentially leading to substantial computational savings for high-dimensional problems.
+\end{itemize}
+
+This approach could significantly reduce the computational cost of RFM while maintaining or improving accuracy.
+
+\subsection{Enhanced Nonlinear PDE Solving}
+
+While the theoretical results primarily address linear approximation capabilities, they can be extended to improve RFM for nonlinear PDEs:
+
+\begin{itemize}
+    \item \textbf{Iterative Linearization}: Implementing an iterative scheme for nonlinear PDEs that leverages the optimal approximation properties of linearized networks at each step.
+    
+    \item \textbf{Component-Wise Approximation}: For PDEs with specific nonlinear terms, decomposing the solution into components that can be efficiently handled by linearized networks with theoretical guarantees.
+    
+    \item \textbf{Adaptive Basis Enrichment}: Systematically enriching the basis functions based on the nonlinearity of the problem and the evolving approximation, guided by theoretical error bounds.
+\end{itemize}
+
+These approaches could bridge the gap between the theoretical optimality of linearized networks and the practical challenges of nonlinear PDE solving.
+
+\subsection{Integrated RFM Framework}
+
+To fully leverage these theoretical advances, we propose an integrated framework that combines current RFM with rigorous mathematical foundations:
+
+\begin{enumerate}
+    \item Begin with problem classification based on expected solution regularity and dimension
+    
+    \item Select appropriate ReLU$^k$ order and determine the optimal number of basis functions using the theoretical guidelines
+    
+    \item Generate well-distributed parameters using deterministic low-discrepancy sequences
+    
+    \item Construct the multi-scale representation with theoretically guided weight allocation across scales
+    
+    \item Apply Sobolev-based rescaling to the loss function components
+    
+    \item Solve the resulting linear least squares problem with regularization informed by coefficient bound estimates
+\end{enumerate}
+
+This integrated approach would preserve the computational efficiency of RFM while enhancing its theoretical foundation, reliability, and accuracy.
+
+The theoretical results on linearized networks with ReLU$^k$ activation functions not only explain the empirical success of methods like RFM but also provide clear pathways for improvement. By incorporating these mathematical insights into practical algorithms, we can develop more powerful, reliable, and efficient methods for solving complex PDEs in science and engineering applications.
+
+\end{document} 
