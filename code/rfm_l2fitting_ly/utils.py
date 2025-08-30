@@ -149,3 +149,59 @@ def plot_err_convergence(relu_k,d,actual_neuron_arr,mean_err_l2_arr,title):
     plt.xlabel("Number of neurons n")
     plt.title(title)
     plt.show() 
+
+import matplotlib
+matplotlib.use("Agg") 
+import matplotlib.pyplot as plt
+
+def plot_err_convergence_levels(relu_k, d, neuron_dict, err_dict, levels, title, outpath):
+    """
+    Plot L2 error convergence for multiple levels l, saving to file only.
+
+    Parameters:
+        relu_k : int
+            Degree of ReLU (k)
+        d : int
+            Input dimension
+        neuron_dict : dict of arrays
+            Each element: actual_neuron_arr for one level l
+        err_dict : dict of arrays
+            Each element: mean_err_l2_arr for one level l
+        levels : list
+            List of level parameters corresponding to neuron_dict / err_dict
+        title : str
+            Plot title
+        outpath : str
+            Path to save the figure
+    """
+    fig, ax = plt.subplots(figsize=(7, 5))
+    L2J = {1: 4, 2: 9, 3: 25}
+
+    for l in levels:
+        neurons = neuron_dict[l]
+        err = err_dict[l]
+        if l == 0:
+            optimal_rate = 1/2 + (2 * relu_k + 1) / (2 * d)
+                        
+            if ("Delta" in title) & ("4, 4" in title):
+                scale = 10**4
+            elif "Delta" in title:
+                scale = 10**2
+            else:
+                scale = 1
+            ref = err[0] * neurons[0]**optimal_rate * neurons**(-optimal_rate) * scale 
+            ax.plot(neurons, ref, '--', label=f'slope = -{optimal_rate:.2f}')
+            ax.plot(neurons, err, '.-', label=f'ReLU$^{relu_k}$', linewidth=2)
+        else:
+            ax.plot(neurons, err, '.-', label=f'J = {L2J[l]}, ReLU$^{relu_k}$', linewidth=2)
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Number of neurons n")
+    ax.set_ylabel("rel $L^2$ error")
+    ax.set_title(title)
+    ax.legend(loc="upper right")
+    ax.grid(True, which="both", ls="--", alpha=0.5)
+
+    fig.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close(fig)
