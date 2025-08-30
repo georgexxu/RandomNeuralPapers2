@@ -9,6 +9,31 @@ import matplotlib.pyplot as plt
 torch.set_default_dtype(torch.float64)
 pi = torch.tensor(np.pi,dtype=torch.float64)
 
+def split_domain_boundary(pts, tol=1e-10):
+    """
+    Split points in [0,1]^2 into interior (domain) and boundary sets.
+
+    Args:
+        pts: (N,2) tensor, points in [0,1]^2
+        tol: float, tolerance for boundary check
+
+    Returns:
+        pts_domain: (Nd,2) tensor, interior points
+        pts_boundary: (Nb,2) tensor, boundary points
+    """
+    x, y = pts[:, 0], pts[:, 1]
+
+    # mask for boundary: if near 0 or 1
+    mask_boundary = (
+        (x < tol) | (x > 1 - tol) |
+        (y < tol) | (y > 1 - tol)
+    )
+
+    pts_boundary = pts[mask_boundary]
+    pts_domain = pts[~mask_boundary]
+
+    return pts_domain, pts_boundary
+
 def SquareMesh2D_points(xmin=-1, xmax=1, Nx=150):
     x = torch.linspace(xmin, xmax,Nx)
     X1, X2 = torch.meshgrid(x,x, indexing='ij')
