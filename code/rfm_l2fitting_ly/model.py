@@ -257,6 +257,25 @@ class ShallowReLUkSolver:
         rel_errl2 = (y_pred - y_ref).norm() / y_ref.norm()
         return rel_errl2.item()
     
+    def eval_h1(self, x): 
+        if x.requires_grad != True:
+            x.requires_grad_(True)
+        target_values = self.target(x)
+        target_grad = torch.autograd.grad(outputs=target_values, inputs=x, grad_outputs= torch.ones_like(target_values),retain_graph=True, create_graph=True)[0] 
+        target_x = target_grad[:,0:1]
+        target_y = target_grad[:,1:2] 
+
+        model_values = self.forward(x)
+        model_grad = torch.autograd.grad(outputs=model_values, inputs=x, grad_outputs=torch.ones_like(model_values),retain_graph=True, create_graph=True)[0]
+        model_x = model_grad[:,0:1]
+        model_y = model_grad[:,1:2]
+    
+        model_grad = torch.autograd.grad(outputs=model_values, inputs=x, grad_outputs=torch.ones_like(model_values))[0] # no need to create or retain_graph, save memory 
+        model_x = model_grad[:,0:1]
+        model_y = model_grad[:,1:2] 
+        return torch.sum((model_x - target_x)**2 +  (model_y - target_y)**2/x.size(0))**0.5 
+
+
 class PouShallowReLUkSolver:
     def __init__(
         self, ws, bs, pts, k=1, l=1, sigma=0.01, m1=1, m2=1):
@@ -446,7 +465,25 @@ class PouShallowReLUkSolver:
         y_pred = self.forward(x)
         rel_errl2 = (y_pred - y_ref).norm() / y_ref.norm()
         return rel_errl2.item()
+    def eval_h1(self, x): 
+        if x.requires_grad != True:
+            x.requires_grad_(True)
+        target_values = self.target(x)
+        target_grad = torch.autograd.grad(outputs=target_values, inputs=x, grad_outputs= torch.ones_like(target_values),retain_graph=True, create_graph=True)[0] 
+        target_x = target_grad[:,0:1]
+        target_y = target_grad[:,1:2] 
+
+        model_values = self.forward(x)
+        model_grad = torch.autograd.grad(outputs=model_values, inputs=x, grad_outputs=torch.ones_like(model_values),retain_graph=True, create_graph=True)[0]
+        model_x = model_grad[:,0:1]
+        model_y = model_grad[:,1:2]
     
+        model_grad = torch.autograd.grad(outputs=model_values, inputs=x, grad_outputs=torch.ones_like(model_values))[0] # no need to create or retain_graph, save memory 
+        model_x = model_grad[:,0:1]
+        model_y = model_grad[:,1:2] 
+        return torch.sum((model_x - target_x)**2 +  (model_y - target_y)**2/x.size(0))**0.5 class ShallowTanhFitter:
+
+
 class ShallowTanhFitter:
     def __init__(self, ws, bs, train_pts, m1=1, m2=1):
         self.n = ws.shape[0]
