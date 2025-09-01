@@ -128,6 +128,11 @@ def s2_uniform_grid_init(neuron_num, dims=2, k=1):
     bs = torch.tensor(bs)
     return ws, bs
 
+def uniform_rand_init(neuron_num, dims=2, s=1):
+    ws = (torch.rand(neuron_num, dims,dtype=torch.float64) - 0.5) * s
+    bs = (torch.rand(neuron_num,dtype=torch.float64) - 0.5) * s
+    return ws, bs
+
 # show convergence order 
 def output_convergence_order_l2(neuron_nums,err_list_l2): 
     print("$n$ & \t $\|u-u_n \|_{L^2}$ & \t order  \\\ \hline \hline ")
@@ -194,6 +199,48 @@ def plot_err_convergence_levels(relu_k, d, neuron_dict, err_dict, levels, title,
             ax.plot(neurons, err, '.-', label=f'ReLU$^{relu_k}$', linewidth=2)
         else:
             ax.plot(neurons, err, '.-', label=f'J = {L2J[l]}, ReLU$^{relu_k}$', linewidth=2)
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Number of neurons n")
+    ax.set_ylabel("rel $L^2$ error")
+    ax.set_title(title)
+    ax.legend(loc="upper right")
+    ax.grid(True, which="both", ls="--", alpha=0.5)
+
+    fig.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+def plot_tanh_err_convergence_levels(scale, d, neuron_dict, err_dict, levels, title, outpath):
+    """
+    Plot L2 error convergence for multiple levels l, saving to file only.
+
+    Parameters:
+        scale : int
+            Scale of uniform distribution
+        d : int
+            Input dimension
+        neuron_dict : dict of arrays
+            Each element: actual_neuron_arr for one level l
+        err_dict : dict of arrays
+            Each element: mean_err_l2_arr for one level l
+        levels : list
+            List of level parameters corresponding to neuron_dict / err_dict
+        title : str
+            Plot title
+        outpath : str
+            Path to save the figure
+    """
+    fig, ax = plt.subplots(figsize=(7, 5))
+    L2J = {1: 4, 2: 9, 3: 25}
+
+    for l in levels:
+        neurons = neuron_dict[l]
+        err = err_dict[l]
+        if l == 0:
+            ax.plot(neurons, err, '.-', label=f'Tanh-${scale}$', linewidth=2)
+        else:
+            ax.plot(neurons, err, '.-', label=f'J = {L2J[l]}, Tanh-${scale}$', linewidth=2)
 
     ax.set_xscale("log")
     ax.set_yscale("log")
