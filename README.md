@@ -1,5 +1,5 @@
 # RandomNeuralPapers2
-This git repo deposits code for the paper Solving High-Dimensional PDEs Using Linearized Neural Networks https://arxiv.org/abs/2601.11771
+This git repo contains code for the paper Solving High-Dimensional PDEs Using Linearized Neural Networks https://arxiv.org/abs/2601.11771
 
 Numerical experiments for **random feature methods (RFM / ELM)** applied to function approximation and PDEs: shallow networks with fixed random or predetermined inner weights, and a linear outer layer solved by least squares / variational assembly.
 
