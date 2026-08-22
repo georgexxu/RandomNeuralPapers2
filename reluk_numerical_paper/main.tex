@@ -1,0 +1,2109 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{caption}
+\usepackage[utf8x]{inputenc}
+\usepackage[mathscr]{eucal}
+\usepackage{amsfonts, amssymb, amsmath, amscd, eucal, amsthm}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\DeclareMathOperator*{\argmin}{argmin}
+\usepackage{array}
+\usepackage{graphicx}
+% \usepackage{subfig}
+\usepackage{subcaption} 
+\usepackage{fancyhdr}
+\usepackage{color}
+\usepackage{extarrows}
+\usepackage{enumerate}
+\usepackage{multirow}
+\usepackage[numbers]{natbib}
+\usepackage{geometry}
+\usepackage{CJK} 
+\usepackage{bm}
+\geometry{left=3cm,right=3cm,top=2.5cm,bottom=2.5cm}
+\usepackage{float}
+\usepackage{hyperref}
+\hypersetup{
+	colorlinks=true,
+	linkcolor=green,
+	filecolor=magenta,      
+	urlcolor=cyan,
+	pdftitle={Overleaf Example},
+	pdfpagemode=FullScreen,
+}
+\usepackage{cleveref} 
+\usepackage{comment} 
+\usepackage{xurl}
+
+% set line space 
+\usepackage{setspace}
+\singlespacing
+% \onehalfspacing
+% \doublespacing
+% \setstretch{1.2} 
+\def\NN{\mathbb{N}}
+\def\RR{\mathbb{R}}
+\def\SS{\mathbb{S}}
+
+%Theorems 
+% Theorems
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{definition}{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\newtheorem{example}{\textbf{Example}}
+
+\title{Solving High-Dimensional PDEs \\Using Linearized Neural Networks}
+
+
+\author{
+Tong Mao\footnotemark[1]
+\and
+Jinchao Xu\thanks{
+Applied Mathematics and Computational Sciences, Computer, Electrical and Mathematical Science and Engineering Division (CEMSE), King Abdullah University of Science and Technology, Thuwal, 23955, Saudi Arabia.
+(\texttt{tong.mao@kaust.edu.sa, jinchao.xu@kaust.edu.sa})
+}
+\and 
+Xiaofeng Xu\thanks{
+Department of Mathematics, Pennsylvania State University, State College, PA 16801, USA.
+(\texttt{xkx5060@psu.edu})
+}
+}
+% \date{\today} % Started Jun. 30th 2024. Completed on Aug 5th 2024
+\date{}
+\begin{document}
+\maketitle
+
+
+\begin{abstract}
+Linearized shallow neural networks that are constructed by fixing the hidden-layer parameters have recently shown strong performance in solving partial differential equations (PDEs). 
+Such models, widely used in the random feature method (RFM) and extreme learning machines (ELM), transform network training into a linear least-squares problem. 
+In this paper, we conduct a numerical study of the variational (Galerkin) and collocation formulations for these linearized networks. 
+Our numerical results reveal that, in the variational formulation, the associated linear systems are severely ill-conditioned, forming the primary computational bottleneck in scaling the neural network size, even when direct solvers are employed. 
+In contrast, collocation methods combined with robust least-squares solvers exhibit better numerical stability and achieve higher accuracy as we increase neuron numbers.
+This behavior is consistently observed for both ReLU$^k$ and $\tanh$ activations, with $\tanh$ networks exhibiting even worse conditioning. 
+Furthermore, \textcolor{blue}{through L$^2$-minimization problems and elliptic PDE benchmarks}, we demonstrate that \textcolor{blue}{within the smooth numerical examples considered here}, random sampling of the hidden layer parameters, commonly used in RFM and ELM, is not necessary for achieving high accuracy.
+For ReLU$^k$ activations, this follows from existing theory and is verified numerically in this paper, while for $\tanh$ activations, we introduce two deterministic schemes that achieve comparable accuracy.
+\end{abstract}
+
+
+\section{Introduction}
+Neural networks have emerged as powerful tools in scientific computing, 
+particularly for the numerical solution of partial differential equations~(PDEs). 
+Representative approaches include physics-informed neural networks (PINNs)~\cite{Cuomo:2022,RPK:2019}, 
+the deep Ritz method~\cite{EY:2018}, and the finite neuron method~\cite{Xu:2020}. 
+All of these methods share a common principle: they seek optimal parameters for a neural 
+network by minimizing a suitable energy functional, that is, by solving an optimization 
+problem of the form
+\begin{equation}
+\label{NN_optimization}
+\min_{v \in \mathcal{F}} E(v),
+\end{equation}
+where $\mathcal{F}$ denotes a neural network function class and $E \colon \mathcal{F} \to \mathbb{R}$ 
+is the chosen energy functional.
+
+Despite their success in various applications, the training of neural networks for PDEs remains challenging due to non-convexity and ill-conditioning~\cite{HSTX:2022}. 
+A variety of training algorithms specifically tailored for PDEs 
+have been developed beyond conventional gradient descent~\cite{GBC:2016}. 
+Examples include the hybrid least–squares gradient descent method~\cite{CGPPT:2020}, 
+motivated by the adaptive basis viewpoint, and the active neuron least–squares method~\cite{AS:2021,AS:2022}, 
+which adjusts neuron positions adaptively to escape training plateaus. 
+The neuron-wise parallel subspace correction method~\cite{PXX:2022} provides a 
+preconditioning strategy for linear layers and updates neurons in parallel. 
+More recently, greedy algorithms~\cite{DT:1996,Jones:1992,MZ:1993,Temlyakov:2011} 
+have been adapted to neural network optimization and have shown strong performance; 
+see, for example,~\cite{DPW:2021,siegel2023greedy,SX:2022a}. 
+The orthogonal greedy algorithm (OGA)~\cite{siegel2023greedy,SX:2022a} in particular has been 
+proven to achieve the optimal approximation rates of shallow neural networks~\cite{SX:2024}. 
+The randomized variant of OGA~\cite{XX:2025} further improves computational 
+efficiency by reducing the size of the discrete dictionary in each iteration, 
+while still achieving optimal rates.
+Other approaches avoid iterative training altogether by employing fixed feature maps. 
+Random feature methods (RFM)~\cite{CCEY:2022,EMW:2020,LL:2024,RR:2007} and extreme learning machines (ELM)~\cite{DL:2021,HZS:2006,LLR:2024} have attracted increasing attention in this context and have achieved remarkably high numerical accuracy, despite the lack of rigorous mathematical analysis.
+% Other approaches avoid iterative training altogether by employing fixed feature maps: 
+% random feature methods~\cite{CCEY:2022,EMW:2020,LL:2024,RR:2007} and extreme learning machines~\cite{DL:2021,HZS:2006,LLR:2024} 
+% have attracted increasing attention in this context also achieve remarkable high numerical accuracy despite a lack of rigorous mathematical analysis. 
+Only recently, it is established in \cite{LMX2025, MX:2025lower} that, for ReLU$^k$ shallow neural networks, the same optimal 
+approximation rate
+\[
+O\!\left(n^{-\frac{1}{2} - \frac{2(k-m)+1}{2d}}\right)
+\]
+can be obtained if the neuron parameters $(\omega_i,b_i)$ are chosen to form a quasi-uniform grid on $S^d$, with the corresponding neurons directly serving 
+as basis functions.
+
+\textcolor{blue}{Motivated by the theoretical results of~\cite{LMX2025, MX:2025lower}, this paper conducts a detailed numerical study of linearized shallow neural networks with pre-determined neurons for solving high-dimensional PDEs.}
+We focus on two questions regarding the behavior of linearized neural networks.
+The first concerns the comparison between the variational (Galerkin) and collocation (least-squares) formulations.
+In traditional finite element methods, the variational approach is standard, while in extreme learning machines and random feature methods, the collocation approach is almost exclusively used.
+Understanding their relative performance in terms of numerical stability and accuracy is therefore of both theoretical and practical interest. 
+\textcolor{blue}{Related recent analyses include~\cite{HLZZ:2025}, which examines conditioning, frequency bias of these two formulations for ReLU$^k$ shallow networks in elliptic PDEs.}
+The second question is whether deterministic parameter constructions can effectively replace random sampling in setting the neuron parameters, and whether such deterministic designs can achieve comparable accuracy, particularly for $\tanh$-activated shallow neural networks, where theoretical results are not yet available.
+We believe this investigation will also shed light on various other activation functions used in shallow neural networks. 
+
+
+\medskip
+\noindent
+The main contributions of this paper are as follows:
+\begin{itemize}
+  \item \textbf{Linearized $\text{ReLU}^k$ shallow networks with pre-determined neurons.}  
+  We study ReLU$^k$ shallow neural networks with hidden-layer parameters chosen deterministically as quasi-uniform grids on $S^d$. 
+  We numerically demonstrate that the optimal approximation rate can be achieved using this approach without the need to optimize the hidden-layer parameters. 
+    In low dimensions, neuron parameters can be arranged in quasi-uniform grids on the sphere. 
+    In higher dimensions, however, constructing such grids is challenging. 
+    To address this, we consider two alternatives: 
+    (i) setting hidden-layer parameters by i.i.d.\ uniform sampling on the sphere, 
+    which corresponds to a random feature method for ReLU$^k$ shallow networks, and 
+    (ii) employing quasi–Monte Carlo (QMC) constructions to generate points on spheres, which are then used to fix the neuron parameters. 
+Our numerical experiments demonstrate that QMC-based parameter selection 
+provides higher accuracy than purely random sampling, indicating the necessity of designing high-quality quasi-uniform grids on hyperspheres. 
+  \item \textbf{Linearized $\tanh$ shallow neural networks with pre-determined neurons.}
+As an alternative to random sampling of neuron parameters from $[-R,R]^{d+1}$, with an appropriate value of $R$, we introduce two deterministic schemes for fixing the nonlinear layer parameters:
+(i) a \emph{Petrushev-type grid scheme}, which selects neuron parameters  from the tensor product of evenly spaced points on a scaled sphere and a one-dimensional interval; and
+(ii) a \emph{sphere-based scheme}, which distributes the parameters quasi-uniformly on a scaled spherical surface of an appropriate radius. 
+Both schemes eliminate randomness, ensure reproducible results, and achieve accuracy comparable to random sampling from $[-R,R]^{d+1}$.
+
+  \item \textbf{Comparison between variational and collocation formulations.} 
+  We conduct a numerical comparison of variational (Galerkin) and collocation formulations through $L^2$-minimization examples.  
+  We observe that the numerical solution obtained from the variational formulation is less stable than that from the collocation method when increasing the number of neurons. 
+  We investigate the conditioning of the resulting linear systems from the variational formulation 
+and identify it as a primary bottleneck in scaling neural network size. 
+While variational (Galerkin) formulations offer theoretical clarity, 
+they suffer from severe ill-conditioning as the number of neurons grows, 
+leading to numerical instability. 
+In contrast, despite a lack of theoretical analysis, collocation methods combined with robust least-squares solvers exhibit better numerical stability in our numerical experiments.
+% This clarifies why $\tanh$ is commonly adopted in PINN-style collocation frameworks. 
+
+\end{itemize}
+
+\medskip
+\noindent
+The remainder of the paper is organized as follows. 
+Section~\ref{sec:theoretical-results} introduces the ReLU$^k$ and $\tanh$ activation functions and recalls approximation results for the corresponding shallow neural networks.
+Section~\ref{sec:methods} presents the variational and collocation formulations used in our numerical study. 
+Section~\ref{sec:numerical-experiments} contains the main numerical experiments, including $L^2$-minimization problems, PDE benchmarks in multiple dimensions, and a study of $\tanh$ activation. 
+We conclude in Section~\ref{sec:conclusion} with a summary of the main findings and directions for future research.
+
+
+
+\section{Theoretical results}\label{sec:theoretical-results}
+
+\subsection{ReLU$^k$ shallow neural network}
+We recall fundamental approximation results for ReLU$^k$ shallow neural networks, which serve as the theoretical basis of our study. 
+We examine the function class $\Sigma_{n, M} (\mathbb{D})$, defined for some $M > 0$, as
+\begin{equation}\label{eq:sigma_n_M}
+\Sigma_{n,M} (\mathbb{D}) = \left\{ \sum_{i=1}^n a_i d_i : a_i \in \mathbb{R}, \text{ } d_i \in \mathbb{D}, \text{ } \sum_{i = 1}^n |a_i| \leq M \right\},
+\end{equation}
+where the dictionary $\mathbb{D}$ is symmetric and is given by
+\begin{equation}
+\label{dictionary}
+\mathbb{D} = \mathbb{P}_k^d:=
+\left\{ \pm \text{ReLU}^k (\omega \cdot x + b ) :  (\omega,b) \in S^{d} \right\}.
+\end{equation}
+
+\begin{theorem}{\cite{SX:2024}}
+Given $u \in \mathcal{K}_1(\mathbb{D})$, there exists a positive constant $M$ depending on $k$ and $d$ such that
+\[
+\inf_{u_n \in \Sigma_{n, M}(\mathbb{D})} \| u - u_n \|_{H^m(\Omega)} \leq C \| u \|_{\mathcal{K}_1(\mathbb{D})} n^{-\frac{1}{2} - \frac{2(k-m)+1}{2d}},
+\]
+where $\Sigma_{n, M}(\mathbb{D})$ and $\mathcal{K}_1(\mathbb{D})$ are the shallow neural network function space, and the variation space with respect to the $\text{ReLU}^k$ dictionary $\mathbb{D}$, respectively, and $C$ is a constant independent of $u$ and $n$.
+\end{theorem}
+This result implies that ReLU$^k$ shallow networks achieve approximation rates of $O(n^{-\frac{1}{2} - \frac{2(k-m)+1}{2d}})$ in the variation space $\mathcal{K}_1(\mathbb{D})$. 
+
+Recently, it is proved in~\cite{LMX2025} that the same rate can be obtained when the neuron parameters $(\omega_i,b_i)$ are fixed to form a quasi-uniform grid on $S^d$.
+Given a predetermined set of parameters $\left\{\theta_j\right\}_{j=1}^n \subset \mathbb{S}^d$, we define the corresponding basis functions
+$$
+\phi_j(x)=\sigma_k\left(\theta_j \cdot \tilde{x}\right)=\sigma_k\left(w_j \cdot x+b_j\right), \quad j=1, \ldots, n, 
+$$
+and the finite neuron space as
+$$
+L_n^k=L_n^k\left(\left\{\theta_j\right\}_{j=1}^n\right)=\operatorname{span}\left\{\phi_1, \ldots, \phi_n\right\}. 
+$$
+
+Analogous to $\Sigma_{n, M}(\mathbb{D})$ in \eqref{eq:sigma_n_M}, we define the constrained version of $L_n^k$ as
+$$
+L_{n, M}^k=\left\{\sum_{j=1}^n a_j \phi_j:\left(n \sum_{j=1}^n a_j^2\right)^{\frac{1}{2}} \leq M\right\}.
+$$
+
+
+% We use the the mesh size $h$ and separation distance $\tilde h$ to describe the distribution of $\{\theta_j\}_{j=1}^n$:
+% \begin{equation}\label{def_h_underlineh}
+%     h=\max_{\theta\in\SS^d}\min_{1\leq j\leq n}\rho(\theta,\theta_j^*),\quad \tilde h=\min\limits_{i\neq j}\rho(\theta_i^*,\theta_j^*).
+% \end{equation}
+% where $\rho$ is the geodesic distance on $\SS^d$. Furthermore, the antipodally separation distance $\underline{h}$ describes how each point is separated from other points and their symmetrical points. The distance is defined by
+% \begin{equation}
+%     \underline{h}=\min\big\{\min\limits_{i\neq j}\rho(\theta_i^*,\theta_j^*),\min\limits_{i\neq j}\rho(-\theta_i^*,\theta_j^*)\big\}.
+% \end{equation}
+
+% \begin{definition}[Quasi-uniform and antipodally  quasi-uniform]\label{def_anti_quasiunif}
+%     Let $d\in\mathbb N$. A set of points $\{\theta_j^*\}_{j=1}^n\subset\SS^d$ is said to be quasi-uniform and antipodally quasi-uniform respectively if
+%     \begin{equation}
+%         h\lesssim\tilde{h},\qquad h\lesssim\underline{h},
+%     \end{equation}
+%     respectively, where the implicit constants are independent of $n$.
+% \end{definition}
+
+\begin{theorem}{\cite{LMX2025}}\label{thm:lfns}
+ Let $k \geq m$, $f \in H^{\frac{d+2 k+1}{2}}(\Omega)$ and $\{\theta_j\}_{j=1}^n$ being quasi-uniform, we have 
+ \begin{equation}
+\begin{aligned}
+\inf _{f_n \in L_{n, M}^k}\left\|f-f_n\right\|_{H^m(\Omega)} \lesssim n^{-\frac{1}{2}-\frac{2 (k-m)+1}{2 d}}\|f\|_{ H^{\frac{d+2 k+1}{2}}(\Omega)}.
+\end{aligned}
+\end{equation}    
+\end{theorem}
+The theoretical finding implies that we can use ReLU$^k$ shallow neural networks with pre-fixed deterministic neurons in approximation functions and solving PDEs, which we will verify numerically in Section \ref{sec:numerical-experiments}. 
+
+\begin{remark}
+    The above theorem applies to functions in Sobolev spaces. Notably, one can further show that such Sobolev spaces and the Barron space are of comparable complexity in terms of metric entropy.
+\end{remark}
+
+
+\subsection{Tanh shallow neural networks}
+\label{sec:tanh_theory}
+
+We now recall several classical approximation results for shallow neural networks
+with the $\tanh$ activation function which is very commonly used in 
+the random feature method (RFM) and extreme learning machine (ELM) frameworks. 
+Let $\Sigma_n(\tanh)$ denote the set of all single-hidden-layer neural networks
+with $n$ hidden neurons and the $\tanh$ activation function
+\begin{equation}
+    \Sigma_n(\tanh) = \left\{ \sum_{i = 1 }^n a_i \tanh(\omega_i \cdot x + b_i), \omega_i \in \mathbb{R}^d, b_i \in \mathbb{R}, x \in \mathbb{R}^d \right\}.  
+\end{equation}
+
+\medskip
+\noindent
+In the work of Mhaskar~\cite{mhaskar1996neural}, 
+the following convergence results were established.
+For target functions $f$ belonging to the Sobolev space
+$W^{r,p}([-1,1]^d)$ with $1 \leq p \leq \infty$, one has
+\begin{equation}
+\label{eq:tanh_poly_rate}
+\inf_{f_n \in \Sigma_n(\tanh)} 
+\|f - f_n\|_{L^p} 
+\leq C\, n^{-r/d}\, \|f\|_{W^{r,p}}.
+\end{equation}
+This estimate shows that $\tanh$-activated shallow networks can achieve
+algebraic convergence of order $\mathcal{O}(n^{-r/d})$ for functions of Sobolev regularity~$r$.
+
+% \medskip
+% \noindent
+% Moreover, if $f$ is analytic in a poly-ellipse $\mathcal{E}_\rho \subset \mathbb{C}^d$
+% for some $\rho > 1$, Mhaskar proved the \emph{spectral--type} estimate
+% \begin{equation}
+% \label{eq:tanh_exp_rate}
+% \inf_{f_n \in \Sigma_n(\tanh)} 
+% \|f - f_n\|_{L^p}
+% \leq
+% C_\rho\, \rho^{-\,n^{1/d}}\, 
+% \max_{z \in \mathcal{E}_\rho} |f(z)|.
+% \end{equation}
+% Hence, when approximating analytic functions, $\tanh$ shallow networks
+% can achieve exponential convergence in $n^{1/d}$, which is much faster than the algebraic
+% rates attainable by piecewise polynomial activations such as ReLU$^k$.
+% However, the convergence deteriorates rapidly with increasing dimension~$d$
+% because of the factor $n^{1/d}$ in the exponent,
+% reflecting the curse of dimensionality.
+
+\medskip
+\noindent
+Earlier, Barron~\cite{Barron:1993} established an $L^2$ approximation rate
+based on Fourier integral representations.
+If $f$ has finite Barron norm
+\[
+\|f\|_{\mathcal{B}_1}
+:= \int_{\mathbb{R}^d} \|\omega\|_2\, |\hat{f}(\omega)|\, d\omega < \infty,
+\]
+then
+\begin{equation}
+\label{eq:barron_rate}
+\inf_{f_n \in \Sigma_n(\tanh)} 
+\|f - f_n\|_{L^2}
+\leq
+C\, \frac{\|f\|_{\mathcal{B}_1}}{\sqrt{n}}.
+\end{equation}
+This $\mathcal{O}(n^{-1/2})$ rate was later extended to Sobolev norms 
+by Siegel and Xu~\cite{siegel2020approximation}, who proved that
+\begin{equation}
+\label{eq:siegelxu_rate}
+\inf_{f_n \in \Sigma_n(\tanh)} 
+\|f - f_n\|_{H^m(\Omega)} 
+\leq
+C\, n^{-1/2}\, \|f\|_{B^{m+1}},
+\end{equation}
+where $B^{m+1}$ denotes a suitable Barron-type space.
+
+\medskip
+\noindent
+These theoretical results collectively establish that $\tanh$ activations possess 
+strong approximation capabilities when the neuron parameters are optimized.
+However, none of these analyses provide an explicit rule for constructing or pre-fixing the nonlinear parameters $(\omega_i,b_i)$.
+In practice, RFM and ELM typically assign these parameters randomly from a uniform distribution on an interval, without theoretical guidance on how such choices affect the convergence rate.
+In this paper, motivated by the result of ReLU$^k$ shallow neural networks as shown in Theorem \ref{thm:lfns}, we investigate whether deterministic constructions 
+of fixed neuron parameters can achieve comparable approximation performance to random sampling.
+Two deterministic schemes are proposed and studied numerically in 
+Section~\ref{sec:numerical-experiments}.
+
+% comment out theorem on least square problem 
+\begin{comment}
+    \subsection{Least squares via deterministic points}
+
+\begin{equation}\label{eqn:f_evenodd_relu}
+        f(\eta)=(-1)^{k+1}f(-\eta),\qquad \eta\in\SS^d,
+    \end{equation}
+
+Now we consider the case where $X = \{\eta_i^*\}_{i=1}^m$ are $m$ on $\mathbb{S}^d$. Let $f_{n,m}$ denote the corresponding least-squares estimator
+\begin{equation}
+        f_{m,n}=\arg\min\limits_{g\in L_n^k}\|f-g\|_{\ell^2(X)},
+    \end{equation}
+where
+$$\|f\|_{\ell^2(X)}^2=\frac{1}{m}\sum\limits_{i=1}^m f(\eta_i^*)^2$$
+
+\begin{theorem}\label{thm:leastsquare}
+    Let $d,n,k\in\NN$, $0\leq s<r\leq k+\frac{1}{2}$, and $\{\theta_j^*\}_{j=1}^n\subset\SS^d$ be antipodally quasi-uniform. Let $k> \frac{d-1}{2}$, there exists a constant $C$ such that for $m\geq Cn$ and $\{\eta_i^*\}_{i=1}^m$ being quasi-uniform, then the solution
+    \begin{equation}
+        f_{m,n}=\arg\min\limits_{g\in L_n^k}\|f-g\|_{\ell^2(X)}
+    \end{equation}
+    satisfies
+    \begin{equation}\label{eqn_main_ls_determ}
+    \begin{split}
+        &\|f-f_{n,m}\|_{\ell^2(X)}\lesssim n^{-\frac{d+2k+1}{2d}}\|f\|_{W^{\frac{d+2k+1}{2},\infty}(\SS^d)},\\
+        &\|f-f_{n,m}\|_{L^2(\SS^d)}\lesssim n^{-\frac{d+2k+1}{2d}}\|f\|_{W^{\frac{d+2k+1}{2},\infty}(\SS^d)}.
+    \end{split}
+    \end{equation}
+    where the corresponding constant is independent of $n,m$, $\{\theta_j^*\}_{j=1}^n$, and $X$.
+\end{theorem}
+
+\end{comment}
+
+
+%     \subsection{Least squares via deterministic points}
+
+% \begin{equation}\label{eqn:f_evenodd_relu}
+%         f(\eta)=(-1)^{k+1}f(-\eta),\qquad \eta\in\SS^d,
+%     \end{equation}
+
+% Now we consider the case where $X = \{\eta_i^*\}_{i=1}^m$ are $m$ on $\mathbb{S}^d$. Let $f_{n,m}$ denote the corresponding least-squares estimator
+% \begin{equation}
+%         f_{m,n}=\arg\min\limits_{g\in L_n^k}\|f-g\|_{\ell^2(X)},
+%     \end{equation}
+% where
+% $$\|f\|_{\ell^2(X)}^2=\frac{1}{m}\sum\limits_{i=1}^m f(\eta_i^*)^2$$
+
+% \begin{theorem}\label{thm:leastsquare}
+%     Let $d,n,k\in\NN$, $0\leq s<r\leq k+\frac{1}{2}$, and $\{\theta_j^*\}_{j=1}^n\subset\SS^d$ be antipodally quasi-uniform. Let $k> \frac{d-1}{2}$, there exists a constant $C$ such that for $m\geq Cn$ and $\{\eta_i^*\}_{i=1}^m$ being quasi-uniform, then the solution
+%     \begin{equation}
+%         f_{m,n}=\arg\min\limits_{g\in L_n^k}\|f-g\|_{\ell^2(X)}
+%     \end{equation}
+%     satisfies
+%     \begin{equation}\label{eqn_main_ls_determ}
+%     \begin{split}
+%         &\|f-f_{n,m}\|_{\ell^2(X)}\lesssim n^{-\frac{d+2k+1}{2d}}\|f\|_{W^{\frac{d+2k+1}{2},\infty}(\SS^d)},\\
+%         &\|f-f_{n,m}\|_{L^2(\SS^d)}\lesssim n^{-\frac{d+2k+1}{2d}}\|f\|_{W^{\frac{d+2k+1}{2},\infty}(\SS^d)}.
+%     \end{split}
+%     \end{equation}
+%     where the corresponding constant is independent of $n,m$, $\{\theta_j^*\}_{j=1}^n$, and $X$.
+% \end{theorem}
+
+
+% \subsection{Least squares via random data}
+
+
+% %\subsection{Least square via random points}
+
+% \begin{theorem}\label{thm:leastsquare_random}
+%     Let $d,n,k\in\NN$, $0\leq s<r\leq k+\frac{1}{2}$, $\{\theta_j^*\}_{j=1}^n\subset\SS^d$ and let $f\in H^s(\SS^d)$ for some $s\leq k$. Then  there exists a constant $C_3$ such that for 
+%     $$m\geq C_3\max\left\{n\log\frac{n}{\delta},\delta^{-\frac{d}{2\epsilon}}\right\},$$
+%     and any i.i.d samples $X = \{\eta_i^*\}_{i=1}^m$ drawn from the uniform distribution on $\mathbb{S}^d$, with probability
+%     $1-2\delta$, the estimation
+%     \begin{equation}
+%         \|f-f_{n,m}\|_{L^2(\SS^d)}\lesssim n^{-\frac{s-\epsilon}{d}}\|f\|_{H^{s}(\SS^d)}
+%     \end{equation}
+%     holds for all $f\in H^s(\SS^d)$ satisfying \eqref{eqn:f_evenodd_relu}.
+%     The corresponding constants are independent of $n,m$, $\{\theta_j^*\}_{j=1}^n$, and $X$.
+% \end{theorem}
+
+
+\section{Methodology}\label{sec:methods}
+
+In this section, we describe the two formulations used in our numerical study of linearized shallow neural networks for solving PDEs, namely, the variational and collocation formulations. 
+The corresponding numerical methods are referred to as variational and collocation methods, respectively. 
+
+
+\subsection{Variational Method}
+
+We introduce the variational method in the context of an $L^2$-minimization problem and an elliptic partial differential equation. 
+For more general problem settings, we refer the reader to~\cite{Xu:2020}. 
+
+We first consider the $L^2$-minimization problem. 
+Given a target function $u \in L^2(\Omega)$ and a subspace $V_n \subset L^2(\Omega)$, 
+the variational problem seeks
+\[
+u_n = \arg\min_{v \in V_n} \|u - v\|_{L^2(\Omega)}.
+\]
+Equivalently, $u_n \in V_n$ satisfies the Galerkin orthogonality condition
+\[
+\langle u_n, v \rangle_{L^2(\Omega)} = \langle u, v \rangle_{L^2(\Omega)}, \quad \forall v \in V_n,
+\]
+where $\langle f,g \rangle_{L^2(\Omega)} := \int_\Omega f(x) g(x)\,dx$. 
+% Thus, $u_n$ is the $L^2$-orthogonal projection of $u$ onto $V_n$, 
+% which requires evaluating continuous integrals over $\Omega$. 
+Choosing basis functions $\{\phi_j\}_{j=1}^n \subset V_n$ 
+and writing $u_n = \sum_{j=1}^n a_j \phi_j$, 
+the coefficients $a=(a_1,\dots,a_n)^\top$ are determined by the linear system
+\[
+M a = b,
+\]
+with entries
+\[
+M_{ij} = \int_\Omega \phi_j(x)\phi_i(x)\,dx, 
+\qquad
+b_i = \int_\Omega u(x)\phi_i(x)\,dx .
+\]
+
+
+We now consider the elliptic PDE
+\begin{align*}
+- \Delta u + u &= f \quad \text{in } \Omega, \\
+\frac{\partial u}{\partial n} &= 0 \quad \text{on } \partial \Omega.
+\end{align*}
+The variational method seeks $u_n \in V_n$ such that
+\begin{equation} \label{eq:variational-neumann}
+a(u_n,v) = \ell(v), \quad \forall v \in V_n,    
+\end{equation}
+with bilinear form and linear functional
+\[
+a(w,v) = \int_\Omega \nabla w(x)\cdot \nabla v(x)\,dx 
++ \int_\Omega w(x) v(x)\,dx, 
+\qquad 
+\ell(v) = \int_\Omega f(x) v(x)\,dx .
+\]
+In other words, $u_n$ is the Galerkin projection of the true solution $u$ 
+with respect to the energy inner product induced by $a(\cdot,\cdot)$. 
+
+Similarly, writing $u_n = \sum_{j=1}^n a_j \phi_j$, 
+the coefficients $a=(a_1,\dots,a_n)^\top$ are determined by the linear system
+\[
+A a = b,
+\]
+with entries
+\[
+A_{ij} = \int_\Omega \nabla \phi_j(x)\cdot \nabla \phi_i(x)\,dx 
++ \int_\Omega \phi_j(x)\phi_i(x)\,dx, 
+\qquad
+b_i = \int_\Omega f(x)\phi_i(x)\,dx .
+\]
+
+\begin{remark}
+For many PDEs, the variational formulation admits an equivalent energy minimization formulation, which is widely used in neural-network-based PDE solvers.
+This principle underlies the \emph{deep Ritz method}~\cite{EY:2018},
+the \emph{finite neuron method}~\cite{Xu:2020},
+and recent greedy algorithms for neural network optimization in PDEs~\cite{siegel2023greedy,XX:2025}.
+\end{remark}
+
+\subsection{Collocation method}
+We consider the following linear boundary-value problem:
+\begin{equation}\label{model_pde}
+\begin{aligned}
+     \mathcal{L}u(x) & = f(x), \quad && x \in \Omega, \\
+     \mathcal{B}u(x) & = g(x), \quad && x \in \partial \Omega, 
+\end{aligned}
+\end{equation}
+where $\mathcal{L}$ and $\mathcal{B}$ denote the linear differential and boundary operators, respectively. 
+For simplicity, we restrict our attention to scalar-valued solutions. 
+
+The collocation method enforces the PDE residual at interior points of the domain and the boundary condition at boundary points, using a finite set of points called collocation points.
+It leads to a least-squares problem and is widely used in PINNs~\cite{RPK:2019}, random feature methods~\cite{CCEY:2022}, and extreme learning machines~\cite{HZS:2006,wang2024extreme}.
+Let $u_n(x) := \sum_{i = 1}^n a_i \phi_i(x)$ be the shallow neural network with $n$ pre-fixed neurons $\{ \phi_i(x)\}_{i = 1}^n$. 
+Let $C_I$ be the set of interior collocation points ($|C_I|=N_I$) 
+and $C_B$ the set of boundary collocation points ($|C_B|=N_B$), 
+with $C := C_I \cup C_B$. 
+The loss function is given by
+\begin{equation}\label{loss}
+    L(\mathbf{a})= \tfrac{1}{2} \sum_{x_i \in C_I} \lambda_I^i \bigl( \mathcal{L} u_n(x_i) - f(x_i) \bigr)^2 
+    +  \tfrac{1}{2} \sum_{x_j^b \in C_B} \lambda_B^j  \bigl( \mathcal{B} u_n(x_j^b) - g(x_j^b) \bigr)^2,
+\end{equation}
+where $\mathbf{a}$ denotes the coefficients $a_{j}$ in~\eqref{eq:sigma_n_M}, 
+and $\lambda_I^i, \lambda_B^j>0$ are penalty parameters that scale the contributions 
+of different collocation points. 
+
+In matrix form, this becomes
+\begin{equation}\label{loss-matrix}
+    \min_{\mathbf{a}} \; \tfrac{1}{2}\|\Lambda_I(D_I \mathbf{a} - \mathbf{f}) \|_2^2 
+    + \tfrac{1}{2}\| \Lambda_B (D_B \mathbf{a}- \mathbf{g} ) \|_2^2. 
+\end{equation}
+In the above matrix form, $\Lambda_I = \text{diag}(\lambda_I^1,...,\lambda_I^{N_I})$, $\Lambda_B = \text{diag}(\lambda_B^1,...,\lambda_B^{N_B})$ are two diagonal matrices that scale the least-squares problem. 
+The matrices $D_I$ and $D_B$ are given by $[D_I]_{i,j} = \mathcal{L}\phi_{j}(x_i) $, and \textcolor{blue}{$[D_B]_{i,j} = \mathcal{B}\phi_{j}(x^b_i)$}. 
+The two vectors $\mathbf{f}$ and $\mathbf{g}$ are the values of the functions $f$ and $g$ evaluated at the collocation points, respectively.
+
+In the special case of $L^2$-minimization, the problem reduces to a standard discrete $\ell^2$-regression.
+The minimizer $\mathbf{a}$ is computed using a least-squares solver in both RFM and ELM.
+
+% \begin{remark}
+% The collocation formulation is a common framework in scientific machine learning and is employed in methods such as the physics-informed neural networks (PINNs)~\cite{raissi2019physics}, the extreme learning machine (ELM)~\cite{HZS:2006,wang2024extreme}, and the random feature method (RFM).
+% \end{remark}
+
+
+\section{Numerical experiments}\label{sec:numerical-experiments}
+In this section, we provide a numerical study of the variational and collocation formulations.
+For ReLU$^k$ shallow neural networks, we numerically confirm that prescribing nonlinear layer parameters via a quasi-uniform grid on the sphere yields the optimal approximation rate under both formulations.
+This verifies the most recent theoretical results on linearized ReLU$^k$ shallow neural networks, as stated in Theorem \ref{thm:lfns}.
+Our experiments further reveal that, for both ReLU$^k$ and $\tanh$ activations, the linear system arising in the variational formulation is extremely ill-conditioned, which quickly becomes a bottleneck to achieving high accuracy when scaling the neural network size.
+% In contrast, the collocation formulation, when solved with a robust least-squares solver, attains higher accuracy for the same networks.
+
+Moreover, using a second-order elliptic PDE example, we verify the convergence of linearized ReLU$^k$ shallow neural networks. 
+We also demonstrate that for ReLU$^k$ networks, quasi–Monte Carlo (QMC) constructions of hidden-layer parameters outperform random sampling from the uniform distribution on the sphere $S^d$, indicating the need for high-quality quasi-uniform grids on $S^d$.
+This approach can be applied in dimensions higher than three, where constructing a quasi-uniform grid on the hypersphere is nontrivial.
+For neural networks with a $\tanh$ activation function, we show that linearized neural networks can be constructed using two deterministic schemes that we propose.
+The resulting linearized neural networks achieve accuracy comparable to those constructed through random sampling, as commonly seen in ELM and RFM.
+These results indicate that randomness may not be necessary to achieve high accuracy when using linearized neural networks.
+
+In our experiments, for the variational formulation, numerical integration is required to assemble the linear system. 
+In one, two, and three dimensions, we employ piecewise Gauss–Legendre quadrature on uniform subdomains, while in higher dimensions we rely on quasi–Monte Carlo methods with a large number of samples~\cite{Caflisch:1998,MC:1995}. 
+The number of integration points is chosen to guarantee sufficient accuracy and is specified for each experiment. 
+For the collocation formulation, the number of collocation points is likewise detailed in the corresponding experiments.
+
+\subsection{ReLU$^k$ Shallow Neural Networks}
+\label{subsec:relul2}
+% \subsubsection{$L^2$-minimization problems}  
+
+We first consider $L^2$-minimization problems in the domain $\Omega = (-1,1)^d$ 
+for dimensions $d=1$--$6$. 
+Throughout this subsection the target function is taken to be
+\begin{equation}
+    u(x) = \prod_{i=1}^d \sin\!\left(\tfrac{\pi x_i}{2}\right).
+\end{equation}
+ 
+ Before proceeding to the numerical results, we introduce how to construct a quasi-uniform grid points on a sphere $S^d$.
+ Constructing quasi-uniform grid points on the sphere $S^d$ is straightforward for $d = 1, 2$.
+In one dimension, we can use the polar coordinate representation. By dividing the angular variable uniformly, we obtain a uniform grid on the circle $S^1$.
+In two dimensions, we can generate a uniform grid on $S^2$ using the following procedure \cite{gonzalez2010measurement}. For $n$ points, we first define the indices $i = 0.5, 1.5, \ldots, n - 0.5$. Then, for each index $i$, we compute:
+\begin{align*}
+\phi = \arccos(1 - 2i/n), \quad 
+\theta = \pi(1 + \sqrt{5})i.
+\end{align*}
+The coordinates of the corresponding points are then given by:
+\begin{align*}
+x = \sin(\phi)\cos(\theta), \quad 
+y = \sin(\phi)\sin(\theta), \quad 
+z = \cos(\phi).
+\end{align*}
+This construction produces a spiral pattern of points that forms an approximately uniform grid on the sphere. The method is based on the golden ratio $\varphi = \frac{1 + \sqrt{5}}{2}$, which helps ensure good spacing between points.
+However, for higher dimensions ($d \geq 3$), constructing a quasi-uniform grid on $S^d$ becomes a nontrivial task.
+Therefore, for convenience, we instead employ a uniform distribution on $S^d$ to randomly sample grid points, similar to the random feature method. In this case, the grid points are not strictly quasi-uniform distributed, but the same approximation rate still holds (up to logarithm) with high probability (see \cite[Theorem 6.2]{LMX2025}). 
+\textcolor{blue}{In section \ref{subsec:qmc-method}, we will also introduce a deterministic scheme that makes use of the quasi Monte Carlo (QMC) points for constructing quasi-uniform grid points on $S^d$, which achieves improved numerical accuracy compared to random sampling.}
+
+\textcolor{blue}{
+\begin{remark}
+In all ReLU$^k$ experiments, we remove trivial redundancies before assembling the discrete system. A neuron is discarded if its activation vanishes on $\Omega$. Neurons that are active throughout $\Omega$
+reduce to polynomials in $\mathbb{P}_k$, so we retain at most $\dim\mathbb{P}_k=\binom{k+d}{d}$ of them. 
+These cases are determined
+from the extrema of $\omega_i\cdot x+b_i$ at the vertices of $\Omega=[-1,1]^d$, and $n$ denotes the number of retained neurons.
+A related procedure is used in~\cite{PXX:2022} to avoid obvious linear
+dependencies that may lead to a singular matrix.
+\end{remark}
+} 
+ 
+
+\subsubsection{Continuous $L^2$-minimization}
+In this experiment, we use ReLU$^2$ shallow neural networks for solving the $L^2$-minimization problem in dimensions 1-6. 
+In the variational formulation, the approximation $u_n \in L_n^k$ is obtained 
+as the $L^2$-projection of $u$, requiring the evaluation of continuous inner products. 
+For numerical integration, in 1D, we divide the interval into 1024 uniform subintervals and use a Gauss quadrature of order 5 in each subinterval.
+In 2D, we divide the square domain into $400^2$ uniform subdomains and use a Gauss quadrature of order 5 in each subdomain.
+In 3D, we divide the cubic domain into $50^3$ uniform subdomains and use a Gauss quadrature of order 3 in each subdomain.
+In higher dimensions, we use the Quasi-Monte Carlo method with integration points generated by Sobol sequences.
+The numbers of integration points are $8\times10^5$, $8\times10^5$, and $2\times10^6$ in 4D, 5D, and 6D, respectively.
+
+Numerical results for dimensions $d=1$--$6$ are shown in 
+Figure~\ref{fig:L2-variational}.  
+Across all the dimensions tested, the numerical error decreases as expected with 
+increasing number of neurons, matching the theoretically guaranteed approximation rate of ReLU$^2$ shallow neural networks. 
+
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimization1d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimization2d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimization3d.png} \\
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimization4d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimization5d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimization6d.png} 
+%     \caption{Error decay for continuous $L^2$-minimization (variational formulation) 
+%     in dimensions $d=1$--$6$.}
+%     \label{fig:L2-variational}
+% \end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/L2_convergence_vs_neurons_relu2.png}
+    \caption{\textcolor{blue}{Error decay for continuous $L^2$-minimization (variational formulation) 
+    in dimensions $d=1$--$6$.}}
+    \label{fig:L2-variational}
+\end{figure}
+
+
+Additional experiments with ReLU activation are reported in Appendix~\ref{app:supp-l2}.  
+
+%% discrete l^2 regression 
+\subsubsection{Discrete $\ell^2$-regression}  
+We next consider the discrete least-squares regression problem, 
+which corresponds to the collocation formulation introduced in 
+Section~\ref{sec:methods}.  
+In one dimension, the collocation points are chosen as a uniform grid of size $2048$ over the interval, including the boundary points. 
+In two dimensions, a uniform $100\times100$ tensor-product grid is used over the domain, including the boundary points. 
+In three dimensions, the collocation points are taken to be a uniform $100\times100\times100$ tensor-product grid over the domain, including the boundary points. 
+For higher-dimensional problems, the collocation points are generated by a Quasi--Monte Carlo method using Sobol sequences. 
+The numbers of integration points are $8\times10^5$, $8\times10^5$, and $2\times10^6$ in 4D, 5D, and 6D, respectively. 
+The numerical errors are evaluated in the same manner as in the continuous $L^2$-minimization setting.
+The least–squares problems are solved using \texttt{scipy.linalg.lstsq} 
+with its default driver \texttt{gelsd}, which is based on a singular value 
+decomposition.
+
+The same target function $u$ is used in dimensions $d=1$--$6$, and ReLU$^2$ networks are used for the task. 
+The results are reported in Figure~\ref{fig:L2-regression}.  
+The observed error decay is consistent with the theoretically guaranteed 
+approximation rate of ReLU$^2$ shallow neural networks across all tested dimensions.  
+
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/l2regression1d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2regression2d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2regression3d.png} \\
+%     \includegraphics[width=0.325\linewidth]{figure/l2regression4d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2regression5d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2regression6d.png} 
+%     \caption{Error decay for discrete $\ell^2$-regression (collocation formulation) 
+%     in dimensions $d=1$--$6$.}
+%     \label{fig:L2-regression}
+% \end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/l2regression_convergence_vs_neurons_relu2.png}
+    \caption{\textcolor{blue}{Error decay for discrete $\ell^2$-regression (collocation formulation) 
+    in dimensions $d=1$--$6$.}}
+    \label{fig:L2-regression}
+\end{figure}
+
+
+Additional experiments with ReLU activation are reported in Appendix~\ref{app:supp-l2}.  
+\begin{comment}
+    
+\begin{remark}
+    Comparing the experiments of variation methods and collocation methods, we can summarize the results we observed as a conjecture:
+
+    Let $\{\theta_j\}_{j=1}^n\in\SS^d$ being quasi-uniform, then there exists a constant $C$ such that for $m\geq Cn$ and $\{x_i^*\}_{i=1}^m$ being quasi-uniform on $\Omega$, the solution of the discrete problem
+        \begin{equation}
+        f_{m,n}=\arg\min\limits_{g\in L_n^k}\left[\frac{1}{m}\sum\limits_{i=1}^m(f(x_i^*)-g(x_i^*))^2\right]
+    \end{equation}
+    achieves an optimal approximation rate in the continuous $L^2$ sense:
+    \begin{equation}\label{eqn_main_ls_determ}
+    \begin{split}
+        \|f-f_{n,m}\|_{L^2(\SS^d)}\lesssim n^{-\frac{d+2k+1}{2d}}\|f\|_{H^{\frac{d+2k+1}{2}}(\Omega)}.
+    \end{split}
+    \end{equation}
+    Theoretically, we did not completely solve this problem, but there is a progress. The corresponding result will be investigated and verified in an upcoming work.
+\end{remark}
+\end{comment}
+
+
+
+\subsubsection{Condition numbers and numerical instability}
+To better understand the numerical challenges associated with linearized neural networks of pre-determined neurons, we analyze the conditioning of the linear systems arising from the continuous $L^2$-minimization problems through examining the condition number of the mass matrix 
+in different dimensions. 
+
+Figures~\ref{fig:relu-condition} and~\ref{fig:relu2-condition} report the growth of condition numbers 
+for ReLU and ReLU$^2$ activations, respectively. 
+\textcolor{blue}{We note that in dimensions 1 and 2, the neuron parameters are chosen deterministically, whereas in dimensions 3--6, they are generated by random sampling. Therefore, for dimensions 3--6, the reported condition numbers are averaged over five independent trials.}
+In all cases, the condition number increases rapidly with the number of neurons, and the fitted slopes (shown as dashed lines) are reported for reference. 
+% The results confirm that the instability observed in $L^2$-minimization is closely linked to the ill-conditioning of the underlying linear systems.
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.32\linewidth]{figure/1drelu.png}
+%     \includegraphics[width=0.32\linewidth]{figure/2drelu.png}
+%     \includegraphics[width=0.32\linewidth]{figure/3drelu.png} \\ 
+%     \includegraphics[width=0.32\linewidth]{figure/4drelu.png}
+%     \includegraphics[width=0.32\linewidth]{figure/5drelu.png}
+%     \includegraphics[width=0.32\linewidth]{figure/6drelu.png} 
+%     \caption{Condition numbers of the mass matrices for ReLU$^1$ in dimensions $d=1$--$6$. 
+%     The dashed lines show least-squares fits on a log--log scale.}
+%     \label{fig:relu-condition}
+% \end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/L2_condition_number_vs_neurons_relu1.png}
+    \caption{\textcolor{blue}{Condition numbers of the mass matrices for ReLU$^1$ in dimensions $d=1$--$6$. 
+    The dashed lines show least-squares fits on a log--log scale.}} 
+    \label{fig:relu-condition}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/L2_condition_number_vs_neurons_relu2.png}
+    \caption{Condition numbers of the mass matrices for ReLU$^2$ in dimensions $d=1$--$6$. 
+    The dashed lines show least-squares fits on a log--log scale.}
+    \label{fig:relu2-condition}
+\end{figure}
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.32\linewidth]{figure/1drelu2.png}
+%     \includegraphics[width=0.32\linewidth]{figure/2drelu2.png}
+%     \includegraphics[width=0.32\linewidth]{figure/3drelu2.png} \\ 
+%     \includegraphics[width=0.32\linewidth]{figure/4drelu2.png}
+%     \includegraphics[width=0.32\linewidth]{figure/5drelu2.png}
+%     \includegraphics[width=0.32\linewidth]{figure/6drelu2.png} 
+%     \caption{Condition numbers of the mass matrices for ReLU$^2$ in dimensions $d=1$--$6$. 
+%     The dashed lines show least-squares fits on a log--log scale.}
+%     \label{fig:relu2-condition}
+% \end{figure}
+
+In summary, we observe that the mass matrices for ReLU and ReLU$^2$ neural networks are very ill-conditioned. 
+This could lead to the instability in the continuous variational formulation, as the number of neurons increases. 
+Indeed, in the continuous $L^2$-minimization setting, we observe that the numerical accuracy 
+deteriorates once the number of neurons becomes large even if we use sufficiently many quadrature points to ensure accuracy of the numerical integration.  
+Figure~\ref{fig:L2-minimization-instability} shows a representative one-dimensional example 
+with ReLU$^2$ activation, where the error initially decreases at the expected rate but 
+then exhibits irregular behavior as $n$ increases. 
+This loss of convergence indicates the presence of numerical instability.
+In the variational formulation, the error decay becomes unstable once the number of neurons $n$ exceeds a moderate threshold, due to severe ill-conditioning of the mass matrix. 
+% The discrete $\ell^2$ regression formulation also exhibits numerical instability as $n$ increases, but the threshold is significantly larger, allowing higher accuracy to be attained before instability sets in.
+
+To alleviate this issue, it is therefore important to design effective preconditioning strategies for such linear systems. 
+Developing such preconditioners for linearized neural network bases is nontrivial, and rigorous results are currently limited. Existing optimal preconditioners are known only in the one-dimensional ReLU setting, see, for example, \cite{PXX:2022}.
+For the $L^2$-minimization problem, one natural alternative is to solve the variational problem in a least-squares form rather than assembling and solving the normal equations directly.
+The details are described in Appendix \ref{app:least-square}.
+We next demonstrate, through a simple one-dimensional example, that this variational least-squares formulation leads to slightly improved numerical stability.
+
+Specifically, we compare two approaches for solving the $L^2$-minimization problem using a one-dimensional ReLU$^2$ shallow neural network. The first approach is the direct assembly and
+solution of the mass matrix arising from the variational formulation, while the second approach
+solves the same variational problem using a weighted least-squares formulation. Both approaches
+employ identical quadrature rules and the same set of sampling points. Therefore, any discrepancy
+in numerical performance can be attributed solely to the conditioning of the resulting linear
+systems rather than to differences in \textcolor{blue}{numerical integration}.
+
+The numerical results are shown in Figure~\ref{fig:L2min-compare-1drelu2}. 
+We observe that the variational least-squares formulation yields slightly more stable numerical accuracy as the number of neurons increases, compared to direct mass matrix assembly.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[t]{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figure/l2minimization1d-instability.png}
+        \caption{}
+        \label{fig:L2-minimization-instability}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figure/L2min-compare-1drelu2.png}
+        \caption{}
+        \label{fig:L2min-compare-1drelu2}
+    \end{subfigure}
+    \caption{\textcolor{blue}{(a)~Error decay for continuous $L^2$-minimization with ReLU$^2$ in one dimension, which becomes unstable as the number of neurons increases.
+    (b)~Comparison of mass-matrix assembly and variational least-squares formulations for 1D ReLU$^2$ networks.}}
+    \label{fig:L2-instability-and-ls-compare}
+\end{figure}
+
+% In contrast, the discrete $\ell^2$ regression formulation remains stable for a relatively larger number of neurons, see Figure \ref{fig:L2-minimization-instability} (right). 
+
+
+\subsubsection{Second-order elliptic PDEs}
+We next consider the Neumann problem
+\begin{equation}
+\label{eq:Neumann}
+\begin{aligned}
+        -\Delta u +  u & = f \quad \text{ in } \Omega = (-1,1)^d,\\ 
+        \frac{\partial u}{\partial n} & = 0 \quad \text{ on } \partial \Omega. 
+\end{aligned}    
+\end{equation} 
+For convenience, we impose the zero Neumann boundary condition and choose the exact solution $ u(x) = \prod_{i=1}^d \sin\!\left(\tfrac{\pi x_i}{2}\right) $.
+This function satisfies the Neumann boundary condition, with
+$\|u\|_{L^2(\Omega)} = 1$, $\|\nabla u\|_{L^2(\Omega)} = \tfrac{\pi}{2}\sqrt{d}$
+for all $d$. 
+
+We solve the equation using ReLU$^k$ shallow neural networks 
+with predetermined neurons under the variational formulation, that is, we find a numerical solution $u_n \in L_n^k$ such that it satisfies the variational problem of the form \eqref{eq:variational-neumann}. 
+The way to construct a quasi-uniform grid points on a sphere $S^d$ for this problem is same as that for the $L^2$-minimization problem. 
+
+For numerical integration, in 2D, we divide the square domain into $100^2$ uniform subdomains and use a Gauss quadrature of order $3$ in each subdomain.
+In 3D, we divide the cubic domain into $50^3$ uniform subdomains and use a Gauss quadrature of order $3$ in each subdomain.
+In higher dimensions, we use the Quasi-Monte Carlo method with integration points generated by Sobol sequences.
+The numbers of integration points are $1\times10^6$, $6\times10^6$, and $5\times10^7$ in 4D, 5D, and 6D, respectively.
+
+
+The results are shown in Tables \ref{tab:Neuman-RFM-ex1-2d}, \ref{tab:Neuman-RFM-ex1-3d}, \ref{tab:Neuman-RFM-ex1-4d}, \ref{tab:Neuman-RFM-ex1-5d} and \ref{tab:Neuman-RFM-ex1-6d}.
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{c|c|c|c|c}
+$n$ & 	 $\|u-u_n \|_{L^2}$ & 	 order $O(n^{-2.25})$  & $ |u-u_n |_{H^1}$ & 	 order $O(n^{-1.75})$\\ \hline \hline 
+% 23 		 & 1.046e-02 &		 * & 8.314e-02 &  *  \\ \hline  
+% 44 		 &  1.655e-03 &  		 2.84  &  1.957e-02 &  2.23  \\ \hline  
+% 88 		 &  5.542e-04 &  		 1.58  &  8.075e-03 &  1.28  \\ \hline  
+88 		 &  5.542e-04 &  		*   &  8.075e-03 &  *   \\ \hline  
+165 		 &  8.224e-05 &  		 3.04  &  1.905e-03 &  2.30  \\ \hline  
+318 		 &  2.070e-05 &  		 2.10  &  6.226e-04 &  1.70  \\ \hline  
+631 		 &  4.214e-06 &  		 2.32  &  1.839e-04 &  1.78  \\ \hline  
+1256 		 &  8.508e-07 &  		 2.32  &  5.139e-05 &  1.85  \\ \hline  
+        \end{tabular}
+        \caption{2D Neumann problem solved by the variational method. ReLU$^3$ shallow neural network with predetermined neurons.}
+        \label{tab:Neuman-RFM-ex1-2d}
+    \end{table}
+
+      \begin{table}[H]
+        \centering
+        \begin{tabular}{c|c|c|c|c}
+$n$ & 	 $\|u-u_n \|_{L^2}$ & 	 order $O(n^{-1.67})$ & $ |u-u_n |_{H^1}$ & 	 order $O(n^{-1.33})$\\ \hline \hline 
+% 24 		 & 4.895e-01 &		 * & 1.670e+00 &  *  \\ \hline  
+% 47 		 &  1.577e-01 &  		 1.69  &  8.307e-01 &  1.04  \\ \hline  
+% 95 		 &  3.859e-02 &  		 2.00  &  2.930e-01 &  1.48  \\ \hline  
+95 		 &  3.859e-02 &  		 *  &  2.930e-01 &   * \\ \hline  
+192 		 &  8.457e-03 &  		 2.16  &  8.397e-02 &  1.78  \\ \hline  
+
+383 		 &  2.164e-03 &  		 1.97  &  2.769e-02 &  1.61  \\ \hline  
+
+751 		 &  6.656e-04 &  		 1.75  &  1.085e-02 &  1.39  \\ \hline  
+
+1481 		 &  1.876e-04 &  		 1.86  &  3.961e-03 &  1.48  \\ \hline  
+        \end{tabular}
+        \caption{3D Neumann problem solved by the variational method. ReLU$^3$ shallow neural network with predetermined neurons. }
+        \label{tab:Neuman-RFM-ex1-3d}
+    \end{table}
+    
+      \begin{table}[H]
+        \centering
+        \begin{tabular}{c|c|c|c|c}
+$n$ & 	 $\|u-u_n \|_{L^2}$ & 	 order $O(n^{-1.375})$ & $ |u-u_n |_{H^1}$ & 	 order $O(n^{-1.125})$\\ \hline \hline 
+% 24 		 & 9.557e-01 &		 * & 3.025e+00 &  *  \\ \hline  
+% 49 		 &  7.325e-01 &  		 0.37  &  2.450e+00 &  0.30  \\ \hline  
+% 95 		 &  3.122e-01 &  		 1.29  &  1.500e+00 &  0.74  \\ \hline  
+95 		 &  3.122e-01 &  		*  &  1.500e+00 &  *\\ \hline  
+199 		 &  9.747e-02 &  		 1.57  &  6.570e-01 &  1.12  \\ \hline  
+393 		 &  3.315e-02 &  		 1.58  &  2.883e-01 &  1.21  \\ \hline  
+791 		 &  1.109e-02 &  		 1.57  &  1.190e-01 &  1.27  \\ \hline  
+1575 		 &  4.142e-03 &  		 1.43  &  5.322e-02 &  1.17  \\ \hline 
+        \end{tabular}
+        \caption{4D Neumann problem solved by the variational method. ReLU$^3$ shallow neural network with predetermined neurons.}
+        \label{tab:Neuman-RFM-ex1-4d}
+    \end{table}
+
+      \begin{table}[H]
+        \centering
+        \begin{tabular}{c|c|c|c|c}
+$n$ & 	 $\|u-u_n \|_{L^2}$ & 	 order $O(n^{-1.2})$ & $ |u-u_n |_{H^1}$ & 	 order $O(n^{-1.0})$\\ \hline \hline 
+% 25 		 & 9.967e-01 &		 * & 3.502e+00 &  *  \\ \hline  
+% 50 		 &  9.794e-01 &  		 0.03  &  3.455e+00 &  0.02  \\ \hline  
+% 99 		 &  9.353e-01 &  		 0.07  &  3.356e+00 &  0.04  \\ \hline  
+99 		 &  9.353e-01 &  		*  &  3.356e+00 &  *   \\ \hline  
+199 		 &  6.036e-01 &  		 0.63  &  2.533e+00 &  0.40  \\ \hline  
+399 		 &  2.408e-01 &  		 1.32  &  1.367e+00 &  0.89  \\ \hline  
+798 		 &  7.664e-02 &  		 1.65  &  5.802e-01 &  1.24  \\ \hline  
+1590 		 &  3.730e-02 &  		 1.04  &  3.400e-01 &  0.78  \\ \hline  
+3182 		 &  1.582e-02 &  		 1.24  &  1.751e-01 &  0.96  \\ \hline 
+        \end{tabular}
+        \caption{5D Neumann problem solved by the variational method. ReLU$^3$ shallow neural network with predetermined neurons. }
+        \label{tab:Neuman-RFM-ex1-5d}
+    \end{table}
+    
+      \begin{table}[H]
+        \centering
+        \begin{tabular}{c|c|c|c|c}
+$n$ & 	 $\|u-u_n \|_{L^2}$ & 	 order $O(n^{-1.08})$  & $ |u-u_n |_{H^1}$ & 	 order $O(n^{-0.92})$\\ \hline \hline 
+% 24 		 & 9.996e-01 &		 * & 3.847e+00 &  *  \\ \hline  
+
+% 50 		 &  9.997e-01 &  		 -0.00  &  3.846e+00 &  0.00  \\ \hline  
+% 100 		 &  9.983e-01 &  		 0.00  &  3.842e+00 &  0.00  \\ \hline  
+100 		 &  9.983e-01 &  		 *  &  3.842e+00 &  *  \\ \hline  
+200 		 &  9.878e-01 &  		 0.02  &  3.811e+00 &  0.01  \\ \hline  
+
+399 		 &  8.384e-01 &  		 0.24  &  3.422e+00 &  0.16  \\ \hline  
+
+798 		 &  4.036e-01 &  		 1.05  &  2.108e+00 &  0.70  \\ \hline  
+
+1598 		 &  1.688e-01 &  		 1.26  &  1.146e+00 &  0.88  \\ \hline  
+
+3194 		 &  7.788e-02 &  		 1.12  &  6.421e-01 &  0.84  \\ \hline  
+        \end{tabular}
+        \caption{6D Neumann problem solved by the variational method. ReLU$^3$ shallow neural network with predetermined neurons. }
+        \label{tab:Neuman-RFM-ex1-6d}
+    \end{table}
+
+{\color{blue}
+To support the claim that the linear system is very ill-conditioned in the variational formulation, we report the condition number of the Galerkin matrix $A$ associated with~\eqref{eq:variational-neumann},
+\[
+A_{ij} = \int_\Omega \nabla\phi_j\cdot\nabla\phi_i + \phi_j\phi_i\,dx. 
+\]
+Figure~\ref{fig:pde-stiffness-condition} shows the condition number $\kappa(A)$ as a function of the number of neurons for ReLU$^3$ networks in dimensions $d=1$--$6$.
+Similar to the $L^2$ minimization experiments, for dimensions 3--6, the reported condition numbers are averaged over five independent trials. 
+As in the mass-matrix study of Figures~\ref{fig:relu-condition} and~\ref{fig:relu2-condition}, the condition number grows rapidly with $n$ in every dimension.
+This confirms that the stiffness system of the elliptic problem is also severely ill-conditioned and may lead to numerical instability when increasing the number of neurons. 
+} 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/Neumann_condition_number_vs_neurons.png}
+    \caption{\textcolor{blue}{Condition numbers of the Galerkin matrix $A$ for the Neumann problem~\eqref{eq:Neumann} with ReLU$^3$ predetermined neurons in dimensions $d=1$--$6$.
+    The dashed lines show least-squares fits on a log--log scale.}}
+    \label{fig:pde-stiffness-condition}
+\end{figure}
+
+
+\subsubsection{Deterministic features using quasi-Monte Carlo points in high dimensions}
+\label{subsec:qmc-method}
+For higher dimensions ($d \geq 3$), constructing a quasi--uniform grid on $S^d$ 
+is nontrivial. 
+In the previous subsections, for convenience, we fix the hidden layer parameters by sampling from a uniform distribution on the sphere $S^d$. 
+While simple to implement, purely random sampling may produce clusters or gaps, 
+and hence does not guarantee quasi--uniform coverage of the sphere.  
+To alleviate this difficulty, we propose to use quasi--Monte Carlo (QMC) point sets on the sphere to determine the hidden layer parameters. 
+The use of QMC sequences ensures a more uniform distribution than purely random sampling.  
+The procedure to generate QMC points uniformly distributed on $S^d$ is described below.
+
+% For the two-dimensional case ($d=2$), it is straightforward to construct a quasi--uniform grid on $S^2$. 
+% We therefore test a deterministic feature construction in 2D, where the neuron parameters are set using 
+% such a grid, and compare it with the baseline random sampling. 
+% The Neumann problem introduced in the previous subsection is solved in both cases, 
+% and the results are shown in Figure~\ref{fig:2dNeumann-RFM-uniform}. 
+% It is observed that the deterministic features yield more accurate numerical solutions 
+% than random features for the same number of neurons.  
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.95\linewidth]{figure/2dneumann-uniform-compare.png}
+%     \caption{2D Neumann problem (product of sine functions). 
+%     Comparison between deterministic quasi--uniform grid points on $S^2$ and 
+%     randomly sampled hidden parameters. ReLU$^3$ activations are used.}
+%     \label{fig:2dNeumann-RFM-uniform}
+% \end{figure}
+
+
+
+\begin{enumerate}
+    \item \textbf{Generate Low-Discrepancy Points:} \\
+    Generate points in the unit cube \([0,1]^{d+1}\) using a QMC sequence, e.g., Sobol or Halton sequences.
+
+    \item \textbf{Clip the Points:} \\
+    Clip each coordinate \(u\) to the interval \([\varepsilon, 1-\varepsilon]\) to avoid boundary values that yield infinities, where \(\varepsilon\) is a small positive constant.
+
+    \item \textbf{Map to the Standard Normal Distribution:} \\
+    Transform each coordinate using the inverse cumulative distribution function (CDF) of the standard normal distribution:
+    \[
+    z = \Phi^{-1}(u),
+    \]
+    where \(\Phi^{-1}\) is the quantile function of the standard Gaussian.
+
+    \item \textbf{Project onto the Unit Sphere:} \\
+    Normalize the resulting vector \(\mathbf{z} \in \mathbb{R}^{d+1}\) by its Euclidean norm:
+    \[
+    \mathbf{x} = \frac{\mathbf{z}}{\|\mathbf{z}\|_2}.
+    \]
+    
+    \item \textbf{Final Result:} \\
+    \textcolor{blue}{The points \(\mathbf{x}\) are approximately uniformly distributed on the sphere \(S^d$. }
+\end{enumerate}
+
+Using this approach, we solve the Neumann problem in dimensions three and five. 
+The corresponding numerical results are reported in 
+Tables~\ref{tab:Neuman-RFM-ex1-3d-qmc} and~\ref{tab:Neuman-RFM-ex1-5d-qmc}. 
+We use the QMC points generated by the Sobol sequence. 
+For both cases, we also compare against the baseline where hidden layer parameters 
+are chosen by independent random sampling.
+\textcolor{blue}{The five MC trials use random seeds \(0,1,2,3,\) and \(5\).
+Seed \(4\) is skipped because the sampled features yield a numerically singular discrete system, causing the direct linear solver to fail.}
+The comparisons are shown in Figures~\ref{fig:3dNeumann-RFM-qmc} and~\ref{fig:5dNeumann-RFM-qmc}. 
+The results indicate that employing QMC points for the hidden parameters improves the numerical accuracy relative to purely random sampling.
+
+
+% \begin{table}[H]
+%         \centering
+%         \begin{tabular}{c|c|c|c|c}
+% $n$ & 	 $\|u-u_n \|_{L^2}$ & 	 order $O(n^{-1.67})$ & $ |u-u_n |_{H^1}$ & 	 order $O(n^{-1.33})$\\ \hline \hline 
+% 23 		 & 4.217e-01 &		 * & 1.550e+00 &  *  \\ \hline 
+% 47 		 &  1.196e-01 &  		 1.76  &  6.404e-01 &  1.24  \\ \hline  
+% 96 		 &  2.883e-02 &  		 1.99  &  2.212e-01 &  1.49  \\ \hline  
+% 191 		 &  7.638e-03 &  		 1.93  &  7.680e-02 &  1.54  \\ \hline  
+% 385 		 &  1.706e-03 &  		 2.14  &  2.228e-02 &  1.77  \\ \hline  
+% 750 		 &  4.588e-04 &  		 1.97  &  7.994e-03 &  1.54  \\ \hline  
+% 1483 		 &  1.526e-04 &  		 1.61  &  3.332e-03 &  1.28  \\ \hline 
+%         \end{tabular}
+%         \caption{3D Neumann problem solved by the variational method. ReLU$^3$ shallow neural network with predetermined neurons constructed from QMC points.  Numerical integration: $50^3$, order $3$.   }
+%         \label{tab:Neuman-RFM-ex1-3d-qmc}
+%     \end{table}
+
+
+\begin{table}[H]
+    \centering
+    {\color{blue}
+    \begin{tabular}{c|c|c|c|c}
+    $n$ & $\|u-u_n\|_{L^2}$ & order $O(n^{-1.67})$ & $|u-u_n|_{H^1}$ & order $O(n^{-1.33})$ \\ \hline \hline
+    30  & $2.955\times10^{-1}$ & *    & $1.225\times10^{0}$ & *    \\ \hline
+    60  & $6.634\times10^{-2}$ & 2.16 & $4.140\times10^{-1}$ & 1.56 \\ \hline
+    123 & $1.567\times10^{-2}$ & 2.01 & $1.380\times10^{-1}$ & 1.53 \\ \hline
+    245 & $4.082\times10^{-3}$ & 1.95 & $4.657\times10^{-2}$ & 1.58 \\ \hline
+    487 & $9.622\times10^{-4}$ & 2.10 & $1.400\times10^{-2}$ & 1.75 \\ \hline
+    957 & $3.152\times10^{-4}$ & 1.65 & $5.910\times10^{-3}$ & 1.28 \\ \hline
+    \end{tabular}
+    \caption{\textcolor{blue}{3D Neumann problem solved by the variational method using a ReLU$^3$ shallow neural network with predetermined neurons constructed from QMC points. Numerical integration is performed using piecewise Gauss quadrature on $50^3$ subdomains, order 3.}}
+    \label{tab:Neuman-RFM-ex1-3d-qmc}
+    }
+\end{table}
+
+
+\begin{table}[H]
+    \centering
+    {\color{blue}
+    \begin{tabular}{c|c|c|c|c}
+    $n$ & $\|u-u_n\|_{L^2}$ & order $O(n^{-1.2})$ & $|u-u_n|_{H^1}$ & order $O(n^{-1.0})$ \\ \hline \hline
+    63   & $9.644\times10^{-1}$ & *    & $3.417\times10^{0}$ & *    \\ \hline
+    126  & $8.694\times10^{-1}$ & 0.15 & $3.198\times10^{0}$ & 0.10 \\ \hline
+    253  & $3.919\times10^{-1}$ & 1.14 & $1.903\times10^{0}$ & 0.74 \\ \hline
+    507  & $1.231\times10^{-1}$ & 1.67 & $8.390\times10^{-1}$ & 1.18 \\ \hline
+    1018 & $5.380\times10^{-2}$ & 1.19 & $4.497\times10^{-1}$ & 0.89 \\ \hline
+    2037 & $2.445\times10^{-2}$ & 1.14 & $2.416\times10^{-1}$ & 0.90 \\ \hline
+    \end{tabular}
+    \caption{\textcolor{blue}{5D Neumann problem solved by the variational method using a ReLU$^3$ shallow neural network with predetermined neurons constructed from QMC points. Numerical integration is performed using $6\times 10^6$ QMC points.}}
+    \label{tab:Neuman-RFM-ex1-5d-qmc}
+    }
+\end{table}
+
+
+% \begin{table}[H]
+%         \centering
+%         \begin{tabular}{c|c|c|c|c}
+% $n$ & 	 $\|u-u_n \|_{L^2}$ & 	 order $O(n^{-1.2})$ & $ |u-u_n |_{H^1}$ & 	 order $O(n^{-1.0})$\\ \hline \hline 
+% % 24 		 & 9.900e-01 &		 * & 3.483e+00 &  *  \\ \hline  
+
+% % 49 		 &  9.719e-01 &  		 0.03  &  3.434e+00 &  0.02  \\ \hline  
+
+% % 98 		 &  9.074e-01 &  		 0.10  &  3.288e+00 &  0.06  \\ \hline  
+% 98 		 &  9.074e-01 &  	*  &  3.288e+00 &  * \\ \hline  
+% 197 		 &  5.577e-01 &  		 0.70  &  2.414e+00 &  0.44  \\ \hline  
+% % 197 		 &  5.577e-01 &  		*  &  2.414e+00 &  * \\ \hline 
+% 397 		 &  2.025e-01 &  		 1.45  &  1.218e+00 &  0.98  \\ \hline  
+% 794 		 &  7.349e-02 &  		 1.46  &  5.689e-01 &  1.10  \\ \hline  
+% 1591 		 &  3.304e-02 &  		 1.15  &  3.038e-01 &  0.90  \\ \hline  
+% 3185 		 &  1.428e-02 &  		 1.21  &  1.579e-01 &  0.94  \\ \hline
+%         \end{tabular}
+%         \caption{\textcolor{blue}{5D Neumann problem solved by the variational method. ReLU$^3$ shallow neural network with predetermined neurons constructed from QMC points. Numerical integration: $6 \times 10^6$ quasi-Monte Carlo points. }  }
+%         \label{tab:Neuman-RFM-ex1-5d-qmc}
+%     \end{table}
+
+
+\begin{figure}[H]
+    \centering
+\includegraphics[width=0.95\linewidth]{figure/3dneumann-qmc-compare.png}
+    \caption{\textcolor{blue}{3D Neumann problem with ReLU$^3$ activation. Comparison of QMC points on $S^3$ with randomly sampled MC points over 5 independent trials. For MC sampling, the solid curve and shaded region indicate the mean and one standard deviation, respectively. }}
+    \label{fig:3dNeumann-RFM-qmc}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+\includegraphics[width=0.95\linewidth]{figure/5dneumann-qmc-compare.png}
+    \caption{\textcolor{blue}{5D Neumann problem with ReLU$^3$ activation. Comparison of QMC points on $S^5$ with randomly sampled MC points over 5 independent trials. For MC sampling, the solid curve and shaded region indicate the mean and one standard deviation, respectively. }}
+    \label{fig:5dNeumann-RFM-qmc}
+\end{figure}
+
+\begin{remark}
+    Using the quasi-Monte Carlo points yields a more uniform distribution on hyperspheres, which can lead to a slight improvement in accuracy. 
+   Alternatively, to get a quasi-uniform grid, one can also compute a centroidal Voronoi tessellation (CVT) on the hypersphere $S^d$ using Lloyd’s algorithm, following the framework in \cite{du1999centroidal, du2003constrained}. 
+\end{remark}
+
+
+
+\begin{comment}
+    
+\section{Other experiments}
+
+\begin{example}[4th order elliptic PDE ]
+For this experiment, the computational domain is $\Omega = [0,1]^d$.
+
+We solve the following 4th order elliptic PDE in various dimensions.
+\begin{equation}
+    \begin{aligned}
+        & (-\Delta)^2 u + u = f \\
+    \end{aligned}
+\end{equation}
+The exact solution is given by $u(x) = \prod_{i = 1}^d (x_i(x_i - 1))^4$. 
+The function on the right hand side is computed correspondingly.
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c|c|c}
+neuron num  & 	 $\|u-u_n \|_{L^2}$ & 	 order  & $ |u-u_n |_{H^2}$ & 	 order\\ \hline \hline 
+% 4 		 & 3.445e-01 &		 * & 1.589e+01 &  *  \\ \hline  
+% 8 		 &  8.639e-01 &  		 -1.33  &  1.569e+01 &  0.02  \\ \hline  
+% 16 		 &  2.918e+00 &  		 -1.76  &  1.362e+01 &  0.20  \\ \hline  
+16 		 &  2.918e+00 &  		*  &  1.362e+01 & *  \\ \hline  
+31 		 &  2.067e-01 &  		 4.00  &  9.749e+00 &  0.51  \\ \hline  
+64 		 &  1.688e-02 &  		 3.46  &  4.303e+00 &  1.13  \\ \hline  
+126 		 &  5.559e-03 &  		 1.64  &  2.601e+00 &  0.74  \\ \hline 
+255 		 &  7.262e-04 &  		 2.89  &  8.580e-01 &  1.57  \\ \hline 
+509 		 &  1.643e-04 &  		 2.15  &  3.499e-01 &  1.30  \\ \hline 
+1006 		 &  2.336e-05 &  		 2.86  &  1.305e-01 &  1.45  \\ \hline 
+    \end{tabular}
+    \caption{2D Biharmonic equation. FNM. Predetermined neurons. ReLU$^3$. Numerical integration: $200^2$, order 3. }
+    \label{tab:my_label}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c|c|c}
+neuron num  & 	 $\|u-u_n \|_{L^2}$ & order $O(n^{-1.67})$  & $ |u-u_n |_{H^2}$ & order $O(n^{-1})$ \\ \hline \hline 
+27 		 & 5.476e-01 &		 * & 1.155e+01 &  *  \\ \hline  
+54 		 &  1.090e-01 &  		 2.33  &  1.055e+01 &  0.13  \\ \hline  
+91 		 &  7.697e-02 &  		 0.67  &  9.025e+00 &  0.30  \\ \hline  
+189 		 &  3.373e-02 &  		 1.13  &  6.189e+00 &  0.52  \\ \hline  
+324 		 &  1.878e-02 &  		 1.09  &  4.271e+00 &  0.69  \\ \hline  
+661 		 &  7.020e-03 &  		 1.38  &  2.489e+00 &  0.76  \\ \hline  
+1295 		 &  1.959e-03 &  		 1.90  &  1.202e+00 &  1.08  \\ \hline  
+2561 		 &  5.182e-04 &  		 1.95  &  5.552e-01 &  1.13  \\ \hline  
+5081 		 &  1.636e-04 &  		 1.68  &  2.922e-01 &  0.94  \\ \hline 
+    \end{tabular}
+    \caption{3D Biharmonic equation. FNM. Predetermined neurons. ReLU$^3$. Numerical integration: $50^3$, order 3. }
+    \label{tab:3Dbiharmonic}
+\end{table}
+
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c|c|c}
+neuron num  & 	 $\|u-u_n \|_{L^2}$ & order $O(n^{-1.375})$  & $ |u-u_n |_{H^2}$ & order $O(n^{-0.875})$ \\ \hline \hline 
+55 		 & 3.982e-01 &		 * & 8.143e+00 &  *  \\ \hline  
+
+111 		 &  1.726e-01 &  		 1.19  &  7.868e+00 &  0.05  \\ \hline  
+
+222 		 &  5.085e-02 &  		 1.76  &  6.989e+00 &  0.17  \\ \hline  
+
+415 		 &  3.755e-02 &  		 0.48  &  5.936e+00 &  0.26  \\ \hline  
+
+809 		 &  2.089e-02 &  		 0.88  &  4.215e+00 &  0.51  \\ \hline  
+
+1525 		 &  1.381e-02 &  		 0.65  &  3.163e+00 &  0.45  \\ \hline  
+
+3043 		 &  7.603e-03 &  		 0.86  &  1.847e+00 &  0.78  \\ \hline  
+
+6015 		 &  6.161e-03 &  		 0.31  &  1.139e+00 &  0.71  \\ \hline  
+
+12021 		 &  5.771e-03 &  		 0.09  &  6.340e-01 &  0.85  \\ \hline 
+    \end{tabular}
+    \caption{4D Biharmonic equation. FNM. Predetermined neurons. ReLU$^3$. Numerical integration: $10^{7}$ quasi-Monte Carlo points  }
+    \label{tab:4Dbiharmonic}
+\end{table}
+
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c|c|c}
+neuron num  & 	 $\|u-u_n \|_{L^2}$ & order $O(n^{-1.375})$  & $ |u-u_n |_{H^2}$ & order $O(n^{-0.875})$ \\ \hline \hline 
+56 		 & 1.680e-01 &		 * & 8.114e+00 &  *  \\ \hline  
+
+114 		 &  8.388e-02 &  		 0.98  &  7.850e+00 &  0.05  \\ \hline  
+
+224 		 &  5.188e-02 &  		 0.71  &  7.011e+00 &  0.17  \\ \hline  
+
+417 		 &  3.703e-02 &  		 0.54  &  5.972e+00 &  0.26  \\ \hline  
+
+789 		 &  2.386e-02 &  		 0.69  &  4.556e+00 &  0.42  \\ \hline  
+
+1532 		 &  1.301e-02 &  		 0.91  &  3.153e+00 &  0.55  \\ \hline  
+
+3028 		 &  4.542e-03 &  		 1.54  &  1.768e+00 &  0.85  \\ \hline  
+
+6075 		 &  1.989e-03 &  		 1.19  &  1.064e+00 &  0.73  \\ \hline  
+
+11950 		 &  9.694e-04 &  		 1.06  &  6.604e-01 &  0.70  \\ \hline  
+    \end{tabular}
+    \caption{4D Biharmonic equation. FNM. Predetermined neurons. ReLU$^3$. Numerical integration: $2^{26} (67,108,864)$ quasi-Monte Carlo points. 
+    For the last row, I increased the number of QMC points to $2^{27}$, the result is quite similar ($n = 12002, 9.919e-04, 6.710e-01$).
+    \textbf{Comments}: 1. due to randomness, need to take an average to see more stable results. 2. the weights and bias need to be more uniform on a sphere 3. the function is quite complicated in high dimensions.}
+\label{tab:4Dbiharmonic}
+\end{table}
+
+We also carry out the experiment using ReLU$^2$ activation function. 
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c|c|c}
+neuron num  & 	 $\|u-u_n \|_{L^2}$ & order $O(n^{-1.125})$  & $ |u-u_n |_{H^2}$ & order $O(n^{-0.625})$ \\ \hline \hline 
+55 		 & 8.874e-02 &		 * & 8.071e+00 &  *  \\ \hline  
+
+107 		 &  7.164e-02 &  		 0.32  &  7.708e+00 &  0.07  \\ \hline  
+
+210 		 &  5.918e-02 &  		 0.28  &  7.227e+00 &  0.10  \\ \hline  
+
+381 		 &  4.315e-02 &  		 0.53  &  6.346e+00 &  0.22  \\ \hline  
+
+776 		 &  3.161e-02 &  		 0.44  &  5.406e+00 &  0.23  \\ \hline  
+
+1466 		 &  2.106e-02 &  		 0.64  &  4.418e+00 &  0.32  \\ \hline  
+
+3021 		 &  1.179e-02 &  		 0.80  &  3.271e+00 &  0.42  \\ \hline  
+
+6005 		 &  6.621e-03 &  		 0.84  &  2.412e+00 &  0.44  \\ \hline  
+
+11908 		 &  3.352e-03 &  		 0.99  &  1.677e+00 &  0.53  \\ \hline  
+    \end{tabular}
+    \caption{4D Biharmonic equation. FNM. Predetermined neurons. ReLU$^2$. Numerical integration: $2^{26} (67,108,864)$ quasi-Monte Carlo points. }
+\label{tab:4Dbiharmonic-relu2}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c|c|c}
+neuron num  &    $\|u-u_n \|_{L^2}$ &    order $O(n^{-1.625})$  & $ |u-u_n |_{H^2}$ &    order $O(n^{-1.125})$ \\ \hline \hline
+56               & 1.531e-01 &           * & 8.235e+00 &  *  \\ \hline
+118              &  4.312e-01 &                  -1.39  &  7.853e+00 &  0.06  \\ \hline
+233              &  5.425e-02 &                  3.05  &  6.855e+00 &  0.20  \\ \hline
+427              &  3.360e-02 &                  0.79  &  5.832e+00 &  0.27  \\ \hline
+803              &  1.837e-02 &                  0.96  &  4.063e+00 &  0.57  \\ \hline
+1568             &  8.701e-03 &                  1.12  &  2.520e+00 &  0.71  \\ \hline
+3029             &  4.391e-03 &                  1.04  &  1.522e+00 &  0.77  \\ \hline
+5983             &  1.370e-03 &                  1.71  &  7.143e-01 &  1.11  \\ \hline
+12012            &  4.556e-04 &                  1.58  &  3.441e-01 &  1.05  \\ \hline
+    \end{tabular}
+    \caption{4D Biharmonic equation. FNM. Predetermined neurons. ReLU$^4$. Numerical integration: $2^{26} (67,108,864)$ quasi-Monte Carlo points. }
+\label{tab:4Dbiharmonic-relu4}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c|c|c}
+neuron num  &    $\|u-u_n \|_{L^2}$ &    order $O(n^{-1.875})$  & $ |u-u_n |_{H^2}$ &    order $O(n^{-1.375})$\\ \hline \hline
+57               & 2.562e-01 &           * & 8.302e+00 &  *  \\ \hline
+109              &  4.752e-01 &                  -0.95  &  8.093e+00 &  0.04  \\ \hline
+232              &  1.392e-01 &                  1.63  &  7.204e+00 &  0.15  \\ \hline
+433              &  2.849e-02 &                  2.54  &  5.635e+00 &  0.39  \\ \hline
+874              &  1.658e-02 &                  0.77  &  3.862e+00 &  0.54  \\ \hline
+1607             &  7.162e-03 &                  1.38  &  2.287e+00 &  0.86  \\ \hline
+3139             &  2.084e-03 &                  1.84  &  9.757e-01 &  1.27  \\ \hline
+6167             &  7.999e-04 &                  1.42  &  4.830e-01 &  1.04  \\ \hline
+12091            &  2.850e-04 &                  1.53  &  4.354e-01 &  0.15  \\ \hline
+    \end{tabular}
+    \caption{4D Biharmonic equation. FNM. Predetermined neurons. ReLU$^5$. Numerical integration: $2^{26} (67,108,864)$ quasi-Monte Carlo points. }
+\label{tab:4Dbiharmonic-relu5}
+\end{table}
+
+\begin{itemize}
+    \item Two more tests: ReLU$^4$ and ReLU$^5$.
+    \item Try a piecewise Gaussian quadrature method
+\end{itemize}
+
+\textbf{In 4D, we could try a piecewise Gaussian quadrature method.
+$N_x = 25$, $p = 3$, we have a total of $31,640,625$ quadrature points.
+}
+
+\end{example}
+
+\end{comment} 
+
+\subsection{Tanh networks and deterministic schemes}
+We have so far focused on deterministic ReLU$^k$ networks. 
+Here, we also investigate the classical $\tanh$ activation, which is widely used in scientific machine learning.
+Similar to the experiments conducted on ReLU$^k$ neural networks, we first compare the variational formulation with the collocation method.
+
+We show that the variational formulation leads to a linear system that is numerically less stable due to its extremely poor conditioning, which severely limits its practical applicability.
+In contrast, in the collocation formulation, $\tanh$ activations can still achieve high numerical accuracy, provided that numerically robust least-squares solvers are employed.
+These observations align with common practice: $\tanh$ is typically used in collocation formulations, whereas ReLU-type activations are more common in variational or Galerkin formulations.
+
+Furthermore, we propose two deterministic schemes for setting the parameters in the nonlinear layer of the $\tanh$ neural network.
+Both schemes achieve accuracy comparable to that of the commonly used random sampling strategies in ELM and RFM. 
+This demonstrates that randomness may not be essential for achieving high accuracy in these methods.
+
+We first consider $L^2$ minimization problems in one and two dimensions, 
+with target functions taken from the sinusoidal family. 
+In one dimension, we use
+\begin{equation} \label{eq:tanh-l2min-1d}
+u(x) = \sin(m \pi x), \quad m \in \{1,2,4\},
+\end{equation}
+and in two dimensions
+\begin{equation}\label{eq:tanh-l2min-2d}
+u(x) = \sin(m \pi x_1)\,\sin(m \pi x_2), \quad m \in \{1,2,4\}.    
+\end{equation}
+The trial space is chosen as $V_n = \mathrm{span}\{\phi_j\}_{j=1}^n$, 
+with neurons
+\[
+\phi_j(x) = \tanh(\omega_j \cdot x + b_j).
+\]
+
+To fix the nonlinear layer parameters, we sample $\{(\omega_j,b_j)\}_{j=1}^n$ 
+independently from the uniform distribution on $[-R,R]^{d+1}$ for some 
+appropriate parameter $R$ that requires manual tuning. 
+This initialization is widely used in the extreme learning machine (ELM) literature and in random feature methods. 
+It has been demonstrated empirically to yield fast, in many cases 
+exponential, convergence in practical problems, although a rigorous 
+theoretical justification of this phenomenon remains open.
+
+In the following, we solve the $L^2$-minimization problem using the variational formulation and the collocation formulation,  respectively. 
+\subsubsection{Continuous $L^2$-minimization}
+In the variational formulation, to assemble the mass matrix, we use a piecewise Gauss quadrature.
+In 1D, we divide the interval into 1024 uniform subintervals and use a Gauss quadrature of order 5 in each subinterval.
+In 2D, we divide the square domain into $100^2$ uniform subdomains and use a Gauss quadrature of order 5 in each subdomain.
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/ELM_1d_sin_m_1_variational_R_m_8_gauss_1024_5.png}
+%     \includegraphics[width=0.325\linewidth]{figure/ELM_1d_sin_m_2_variational_R_m_8_gauss_1024_5.png}
+%     \includegraphics[width=0.325\linewidth]{figure/ELM_1d_sin_m_4_variational_R_m_8_gauss_1024_5.png} 
+%     \caption{1D $L^2$ minimization with $\tanh$ activations. Variational formulation. 
+%     Target function $u(x) = \sin(m\pi x)$ for $m=1,2,4$.}
+%     \label{fig:1dl2-tanh-var}
+% \end{figure}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/elm_2d_sin_m_1_variational_R_m_8_gauss_100_3.png}
+%     \includegraphics[width=0.325\linewidth]{figure/elm_2d_sin_m_2_variational_R_m_8_gauss_100_3.png}
+%     \includegraphics[width=0.325\linewidth]{figure/elm_2d_sin_m_4_variational_R_m_8_gauss_100_3.png} 
+%     \caption{2D $L^2$ minimization with $\tanh$ activations. Variational formulation. 
+%     Target function $u(x) = \sin(m\pi x_1)\sin(m\pi x_2)$ for $m=1,2,4$.}
+%     \label{fig:2dl2-tanh-var}
+% \end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/ELM_1d_L2min.png}
+    \caption{ \textcolor{blue}{1D $L^2$ minimization with $\tanh$ activations. Variational formulation. 
+    $(\omega_j,b_j)$ are sampled from the uniform distribution on $[-R,R]^{2}$. 
+    Target function $u(x) = \sin(m\pi x)$ for $m=1,2,4$.}}
+    \label{fig:1dl2-tanh-var}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/ELM_2d_L2min.png}
+    \caption{\textcolor{blue}{2D $L^2$ minimization with $\tanh$ activations. Variational formulation. 
+    $(\omega_j,b_j)$ are sampled from the uniform distribution on $[-R,R]^{3}$. 
+    Target function $u(x) = \sin(m\pi x_1)\sin(m\pi x_2)$ for $m=1,2,4$.}}
+    \label{fig:2dl2-tanh-var}
+\end{figure}
+
+\subsubsection{Discrete $\ell^2$-regression}
+
+We now consider the discrete least-squares regression problem, which corresponds to the collocation formulation introduced in 
+Section~\ref{sec:methods}.  
+In one dimension, the collocation points are chosen as a uniform grid of size $1024$ over the interval, including the boundary points. 
+In two dimensions, a uniform $50\times50$ tensor-product grid is used over the domain, including the boundary points. 
+To evaluate the numerical errors, we measure it under the continuous $L^2$-norm by using an accurate piecewise Gauss quadrature method. 
+In 1D, we divide the interval into 1024 uniform subintervals and use a Gauss quadrature of order 5 in each subinterval.
+In 2D, we divide the square domain into $50^2$ uniform subdomains and use a Gauss quadrature of order 5 in each subdomain.
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/elm_1d_sin_m_1_collocation_R_m_8.png}
+%     \includegraphics[width=0.325\linewidth]{figure/elm_1d_sin_m_2_collocation_R_m_8.png}
+%     \includegraphics[width=0.325\linewidth]{figure/elm_1d_sin_m_4_collocation_R_m_8.png}
+%     \caption{1D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+%     Target function $u(x) = \sin(m\pi x)$ for $m=1,2,4$. }
+%     \label{fig:1dl2-tanh-col}
+% \end{figure}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/elm_2d_sin_m_1_collocation_R_m_8.png}
+%     \includegraphics[width=0.325\linewidth]{figure/elm_2d_sin_m_2_collocation_R_m_8.png}
+%     \includegraphics[width=0.325\linewidth]{figure/elm_2d_sin_m_4_collocation_R_m_8.png}
+%     \caption{2D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+%     Target function $u(x) = \sin(m\pi x_1)\sin(m\pi x_2)$ for $m=1,2,4$. }
+%     \label{fig:2dl2-tanh-col}
+% \end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/ELM_1d_L2reg.png}
+    \caption{\textcolor{blue}{1D $L^2$ minimization with $\tanh$ activations. Collocation formulation.   $(\omega_j,b_j)$ are sampled from the uniform distribution on $[-R,R]^{2}$. 
+    Target function $u(x) = \sin(m\pi x)$ for $m=1,2,4$. }}
+    \label{fig:1dl2-tanh-col}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/ELM_2d_L2reg.png}
+    \caption{\textcolor{blue}{2D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+    $(\omega_j,b_j)$ are sampled from the uniform distribution on $[-R,R]^{3}$. Target function $u(x) = \sin(m\pi x_1)\sin(m\pi x_2)$ for $m=1,2,4$. }}
+    \label{fig:2dl2-tanh-col}
+\end{figure}
+
+
+
+{\color{blue}
+\textbf{Observations.}
+In both formulations we report the continuous $L^2$ error, computed with the same high-order piecewise Gauss quadrature described above.
+The two methods do, however, optimize different objectives: the variational formulation assembles and solves the mass-matrix system associated with the continuous $L^2$ projection, whereas collocation minimizes a discrete $\ell^2$ residual at the collocation points.
+With the common evaluation metric, collocation still reaches errors below $10^{-14}$ in one dimension and below $10^{-10}$ in two dimensions, while the variational formulation levels off at about $10^{-7}$ and $10^{-5}$, respectively.
+We attribute this gap primarily to numerical conditioning rather than to quadrature error or to a genuine difference in approximation power.
+As shown next in Tables~\ref{tab:condition-tanh-1d} and~\ref{tab:condition-tanh-2d}, the variational mass matrices for $\tanh$ activations are extremely ill-conditioned, and forming the Gram system effectively squares the condition number of the underlying matrix of basis functions $\Phi$ (see Appendix~\ref{app:least-square}).
+Collocation avoids this step by applying a robust least-squares solver directly to the matrix of basis functions evaluated at the collocation points, which explains why it attains a much lower continuous $L^2$ error under comparable settings.
+}
+
+\subsubsection{Condition numbers and numerical instability}
+
+We now examine the conditioning of the mass matrices arising in the variational formulation 
+with $\tanh$ activations. Tables~\ref{tab:condition-tanh-1d} and~\ref{tab:condition-tanh-2d} 
+report the condition numbers for one- and two-dimensional $L^2$ minimization problems, 
+as the number of neurons $n$ increases. 
+In both cases, the condition numbers grow extremely rapidly with~$n$, 
+indicating severe ill-conditioning in the underlying linear systems. 
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c}
+        $n$ & condition number \\ \hline \hline 
+        % 2 & 745\\ \hline 
+        4 & 1.8e05\\ \hline 
+        8 & 5.5e13 \\ \hline 
+        16 & 1.8e16 \\ \hline 
+        32 & 2.4e17\\ \hline 
+    \end{tabular}
+    \caption{Condition numbers of the mass matrix for 1D $L^2$ minimization with $\tanh$ activations.}
+    \label{tab:condition-tanh-1d}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c}
+        $n$ & condition number \\ \hline \hline 
+        % 2 & 237646\\ \hline 
+        4 & 2.4e05\\ \hline 
+        8 & 5.1e07 \\ \hline 
+        16 & 5.7e10\\ \hline 
+        32 & 1.6e16\\ \hline 
+    \end{tabular}
+    \caption{Condition numbers of the mass matrix for 2D $L^2$ minimization with $\tanh$ activations.}
+    \label{tab:condition-tanh-2d}
+\end{table}
+
+% \subsubsection{Summary}
+
+% \begin{itemize}
+%   \item In the variational formulation, shallow networks with $\tanh$ activations 
+%   exhibit extremely poor conditioning, which severely limits their practical applicability. 
+%   \item In the collocation formulation, $\tanh$ activations can nevertheless achieve 
+%   high approximation accuracy, provided that numerically robust least-squares solvers are employed. 
+% \end{itemize}
+
+% These observations align with common practice: $\tanh$ is widely used in collocation-based PINNs.  
+% while ReLU-type activations are preferred in variational or Galerkin formulations. 
+% A systematic theoretical study of $\tanh$ activations is left for future work.
+
+\subsubsection{Deterministic parameter schemes }
+In this subsection, we introduce two deterministic approaches for setting the nonlinear layer parameters of the $\tanh$ shallow neural network.
+
+The first scheme is motivated by Petrushev’s result in \cite{petrushev1998approximation}, and hence we refer to it as Petrushev's scheme. 
+The second scheme is inspired by the parameter selection methods used for ReLU$^k$ shallow neural networks in \cite{LMX2025}.
+Since $\tanh$ is non-homogeneous, we set the nonlinear layer parameters on a quasi-uniform grid over $r \times S^d$ for a suitable radius $r$, where $S^d$ denotes the $d$-dimensional unit sphere in $\mathbb{R}^{d+1}$.
+We refer to this as the sphere scheme.
+The two schemes are described as follows.
+
+\begin{enumerate}
+    \item \textbf{Petrushev's scheme.}  
+    Let $\Theta_1 := \{\omega_i \}_{i=1}^{n_1}$ denote a quasi-uniform grid on $r_1 S^{d-1}$, the $(d-1)$-sphere of radius $r_1$, and let $\Theta_2 := \{b_i\}_{i=1}^{n_2}$ denote a uniform grid on the interval $I := [-r_2, r_2]$ for some appropriate value of $r_2$.  
+    We then form the tensor product of these two grids to obtain the parameter set  
+    \[
+    \Theta := \{ (\omega_i, b_j) \mid \omega_i \in \Theta_1,\, b_j \in \Theta_2 \}.
+    \]
+    This defines a set of points on the product domain $r_1 S^{d-1} \times [-r_2,r_2]$, which is used to set the nonlinear layer parameters.  
+    % We remark that, in Petrushev’s original work, $\Theta_1$ is taken from the unit sphere and $\Theta_2$ from the unit interval.  
+    \item \textbf{Sphere scheme.}  
+    The parameters $(\omega_i, b_i)$ form a quasi-uniform grid on $r \times S^d$, where $S^d$ denotes the $d$-dimensional unit sphere in $\mathbb{R}^{d+1}$.  
+\end{enumerate}
+
+{\color{blue}
+\begin{remark}[Petrushev's scheme in higher dimensions]
+Petrushev's scheme extends directly to $d\geq 3$. Given a total budget of $n$ neurons, we choose
+\[
+n_1 \approx n^{(d-1)/d}
+\qquad\text{and}\qquad
+n_2 \approx n^{1/d},
+\]
+with integer rounding so that $n_1n_2\approx n$. 
+This choice is consistent with the dimensions of the two parameter components, since the directional variable $\omega$ lies on the $(d-1)$-dimensional sphere $S^{d-1}$, while the bias variable $b$ lies in the one-dimensional interval $[-r_2,r_2]$. 
+Therefore, the tensor-product construction remains directly applicable in dimensions $d\geq 3$.
+\end{remark}
+}
+
+{\color{blue}
+\begin{remark}[Choice of $R$, $r_1$, $r_2$, and $r$]
+\label{rem:radius-tuning}
+The scales $R$ (random sampling on $[-R,R]^{d+1}$), $r_1,r_2$ (Petrushev's scheme), and $r$ (sphere scheme) are selected by a small grid search.
+We try a few candidate values and keep the value that yields the smallest continuous $L^2$ error on the given target (or the elliptic residual for PDE tests).
+\end{remark}
+}
+
+\textbf{$L^2$-minimization problems}
+
+In the following, we solve the same $L^2$-minimization problems with target functions given by \eqref{eq:tanh-l2min-1d} in 1D and \eqref{eq:tanh-l2min-2d} in 2D using the collocation methods. 
+The function space is chosen as $V_n = \mathrm{span}\{\phi_j\}_{j=1}^n$, 
+where the neuron functions are defined as
+\[
+\phi_j(x) = \tanh(\omega_j \cdot x + b_j),
+\]
+and $(\omega_j,b_j)$ are set according to the two schemes introduced above. 
+In one dimension, the collocation points are chosen as a uniform grid of size $1024$ over the interval, including the boundary points. 
+In two dimensions, a uniform $50\times50$ tensor-product grid is used over the domain, including the boundary points. 
+To evaluate the numerical errors, we measure it under the continuous $L^2$-norm by using an accurate piecewise Gauss quadrature method. 
+In 1D, we divide the interval into 1024 uniform subintervals and use a Gauss quadrature of order 5 in each subinterval.
+In 2D, we divide the square domain into $50^2$ uniform subdomains and use a Gauss quadrature of order 5 in each subdomain.
+
+The numerical results obtained using Petrushev's scheme are plotted in Figures~\ref{fig:1dl2-tanh-col-petrushev} and~\ref{fig:2dl2-tanh-col-petrushev}, showing rapid convergence when appropriate values of $r_1$ and $r_2$ are chosen. 
+The numerical results obtained using the sphere scheme are plotted in Figures~\ref{fig:1dl2-tanh-col-sphere} and~\ref{fig:2dl2-tanh-col-sphere}, also showing rapid convergence when an appropriate radius $r$ is selected. 
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/petrushev_1d_sin_m_1_collocation_R_m_8.png}
+%     \includegraphics[width=0.325\linewidth]{figure/petrushev_1d_sin_m_2_collocation_R_m_8.png}
+%     \includegraphics[width=0.325\linewidth]{figure/petrushev_1d_sin_m_4_collocation_R_m_8.png}
+%     \caption{1D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+%     Target function $u(x) = \sin(m\pi x)$ for $m=1,2,4$. }
+%     \label{fig:1dl2-tanh-col-petrushev}
+% \end{figure}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/petrushev_2d_sin_m_1_collocation_R_m_8.png}
+%     \includegraphics[width=0.325\linewidth]{figure/petrushev_2d_sin_m_2_collocation_R_m_8.png}
+%     \includegraphics[width=0.325\linewidth]{figure/petrushev_2d_sin_m_4_collocation_R_m_8.png}
+%     \caption{2D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+%     Target function $u(x) = \sin(m\pi x_1)\sin(m\pi x_2)$ for $m=1,2,4$. }
+%     \label{fig:2dl2-tanh-col-petrushev}
+% \end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/Petrushev_1d_l2reg.png}
+    \caption{1D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+    Target function $u(x) = \sin(m\pi x)$ for $m=1,2,4$. }
+    \label{fig:1dl2-tanh-col-petrushev}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/Petrushev_2d_l2reg.png}
+    \caption{2D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+    Target function $u(x) = \sin(m\pi x_1)\sin(m\pi x_2)$ for $m=1,2,4$. }
+    \label{fig:2dl2-tanh-col-petrushev}
+\end{figure}
+
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/sphere_scheme_1d_sin_m_1_collocation_R_m_8.png}
+%     \includegraphics[width=0.325\linewidth]{figure/sphere_scheme_1d_sin_m_2_collocation_R_m_8.png}
+%     \includegraphics[width=0.325\linewidth]{figure/sphere_scheme_1d_sin_m_4_collocation_R_m_8.png}
+%     \caption{1D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+%     Target function $u(x) = \sin(m\pi x)$ for $m=1,2,4$. }
+%     \label{fig:1dl2-tanh-col-sphere}
+% \end{figure}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/sphere_scheme_2d_sin_m_1_collocation_R_m_4.png}
+%     \includegraphics[width=0.325\linewidth]{figure/sphere_scheme_2d_sin_m_2_collocation_R_m_4.png}
+%     \includegraphics[width=0.325\linewidth]{figure/sphere_scheme_2d_sin_m_4_collocation_R_m_4.png}
+%     \caption{2D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+%     Target function $u(x) = \sin(m\pi x_1)\sin(m\pi x_2)$ for $m=1,2,4$. }
+%     \label{fig:2dl2-tanh-col-sphere}
+% \end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/Sphere_1d_l2reg.png}
+    \caption{1D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+    Target function $u(x) = \sin(m\pi x)$ for $m=1,2,4$. }
+    \label{fig:1dl2-tanh-col-sphere}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/Sphere_2d_l2reg.png}
+    \caption{2D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+    Target function $u(x) = \sin(m\pi x_1)\sin(m\pi x_2)$ for $m=1,2,4$. }
+    \label{fig:2dl2-tanh-col-sphere}
+\end{figure}
+
+\textbf{Second-order elliptic PDEs}
+In the following, we solve a second-order elliptic PDE using linearized shallow neural network with $\tanh$ activation under the collocation formulation as described in Section~\ref{sec:methods}. 
+The nonlinear layer parameters are fixed a priori using the
+proposed sphere scheme, while the linear output layer is determined by solving a least-squares problem.
+
+We first consider a one-dimensional second-order elliptic problem \eqref{eq:Neumann}
+with Dirichlet boundary conditions. 
+In one dimension, we choose the exact solution
+\begin{equation}
+\label{eq:1d-pde-sln}
+u(x) = \sum_{i=1}^{3} \sin(m_i \pi x),
+\quad m_1 = 1,\; m_2 = 2,\; m_3 = 4.
+\end{equation}
+The corresponding right-hand-side function is computed analytically from the PDE.
+The collocation points are chosen as a uniform grid of 200 points on $[-1,1]$, including
+the boundary points.
+
+We initialize the nonlinear layer parameters of the $\tanh$ neural network using the
+sphere scheme and test a range of different sphere radii. The approximation errors are evaluated using an accurate piecewise Gaussian quadrature rule, namely, the interval $[-1,1]$
+is divided into 1024 uniform subintervals, and a Gauss quadrature rule of order 3 is applied on each subinterval.
+
+We report both the $L^2$ error and the $H^1$ seminorm error, plotted against the number
+of neurons in Figure~\ref{fig:1dNeumann_tanh_sphere}. As the number of neurons increases,
+the method exhibits extremely fast convergence, with errors rapidly decreasing to the
+order of $10^{-13}$, indicating a highly accurate numerical solution.
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{figure/Sphere_elliptic_1d.png}
+    \caption{\textcolor{blue}{Numerical results for the one-dimensional second-order elliptic problem with exact solution \eqref{eq:1d-pde-sln}, solved using a collocation formulation with $\tanh$ activation. 
+The nonlinear layer parameters are initialized by the proposed sphere scheme with different sphere radii, and the resulting $L^2$ and $H^1$ seminorm errors are shown.}}
+    \label{fig:1dNeumann_tanh_sphere}
+\end{figure}
+
+Next, we consider a two-dimensional second-order elliptic problem \eqref{eq:Neumann} with Dirichlet boundary conditions, solved using a linearized shallow neural network
+with $\tanh$ activation. 
+As in the one-dimensional case, the nonlinear layer parameters are fixed in advance using the proposed sphere scheme, and the linear output layer is
+computed by solving a least-squares problem.
+
+% We employ the collocation formulation described in Section~\ref{sec:methods}, which leads to an overdetermined linear system that is solved using a standard least-squares solver.
+In two dimensions, we choose the exact solution
+\begin{equation}
+\label{eq:2d-pde-sln}
+u(\mathbf{x}) = \sum_{i=1}^{3} \sin(m_i \pi x_1)\,\sin(m_i \pi x_2),
+\end{equation}
+with $m_1 = 1$, $m_2 = 2$, and $m_3 = 4$. 
+The corresponding right-hand-side function is computed analytically from the PDE. 
+The collocation points are chosen as a uniform $100\times100$ grid on the square domain, with boundary points included.
+
+We initialize the nonlinear layer parameters of the $\tanh$ neural network using the sphere scheme and test a range of different sphere radii.
+The approximation errors are evaluated using an accurate piecewise Gaussian quadrature rule: the square domain is partitioned into $50^2$ uniform subdomains, and a Gauss quadrature rule of order 5 is applied on each subdomain.
+
+We report both the $L^2$ error and the $H^1$ seminorm error, plotted against the number of neurons in Figure~\ref{fig:2dNeumann_tanh_sphere}. As the number of neurons increases, the method continues to exhibit rapid convergence. In particular, the $L^2$ error reaches the order of $10^{-9}$, while the $H^1$ seminorm error reaches the order of $10^{-7}$, demonstrating the effectiveness of the proposed sphere scheme in two dimensions.
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{figure/Sphere_elliptic_2d.png}
+    \caption{\textcolor{blue}{Numerical results for the two-dimensional second-order elliptic problem with exact solution \eqref{eq:2d-pde-sln}, solved using a collocation formulation with $\tanh$ activation.
+The nonlinear layer parameters are initialized by the proposed sphere scheme with different sphere radii, and the resulting $L^2$ and $H^1$ seminorm errors are shown.}}
+    \label{fig:2dNeumann_tanh_sphere}
+\end{figure}
+
+
+
+% \begin{remark}
+%     Comparing the experiments of variation methods and collocation methods, we can summarize the results we observed as a conjecture:
+
+%     Let $\{\theta_j\}_{j=1}^n\in\SS^d$ being quasi-uniform, then there exists a constant $C$ such that for $m\geq Cn$ and $\{x_i^*\}_{i=1}^m$ being quasi-uniform on $\Omega$, the solution of the discrete problem
+%         \begin{equation}
+%         f_{m,n}=\arg\min\limits_{g\in L_n^k}\left[\frac{1}{m}\sum\limits_{i=1}^m(f(x_i^*)-g(x_i^*))^2\right]
+%     \end{equation}
+%     achieves an optimal approximation rate in the continuous $L^2$ sense:
+%     \begin{equation}\label{eqn_main_ls_determ}
+%     \begin{split}
+%         \|f-f_{n,m}\|_{L^2(\SS^d)}\lesssim n^{-\frac{d+2k+1}{2d}}\|f\|_{H^{\frac{d+2k+1}{2}}(\Omega)}.
+%     \end{split}
+%     \end{equation}
+%     Theoretically, we did not completely solve this problem, but there is a progress. The corresponding result will be investigated and verified in an upcoming work.
+% \end{remark}
+
+\section{Conclusion}\label{sec:conclusion}
+
+In this paper, we have presented a systematic numerical study of linearized shallow neural networks for the approximation of high-dimensional functions and the 
+solution of elliptic PDEs. 
+They are shallow neural networks with deterministically fixed hidden-layer parameters. 
+Our results demonstrate that, \textcolor{blue}{for the smooth test problems considered here}, random sampling of the hidden-layer parameters, commonly used in RFM and ELM, is not necessary for achieving high accuracy. 
+By employing quasi-uniform and quasi–Monte Carlo points to determine the hidden-layer features of ReLU$^k$ networks, we numerically demonstrate that the linearized ReLU$^k$ shallow neural networks achieve the optimal approximation rate.
+% We also propose two deterministic parameter schemes for linearized $\tanh$ shallow neural networks and achieve \textcolor{blue}{comparable} accuracy in function approximation and elliptic PDE problems. 
+We also propose two deterministic parameter schemes for linearized $\tanh$ shallow neural networks that, on the test problems considered here, \textcolor{blue}{achieve accuracy comparable to random sampling of the hidden-layer parameters as commonly used in RFM and ELM}.
+
+Furthermore, we carry out a numerical study of the variational and collocation 
+formulations for linearized neural networks. 
+The variational approach enjoys a clean theoretical foundation as a 
+Galerkin projection, yet our experiments show that it suffers from severe 
+ill-conditioning as the number of neurons increases. 
+In contrast, the collocation 
+formulation, implemented in a least–squares setting, is shown to be more numerically stable when solved with a robust least-squares solver, though its error analysis remains less complete. 
+Across both formulations, conditioning emerges as a critical bottleneck: once the 
+condition numbers of the associated Gram or stiffness matrices grow too large, further gains in accuracy become impossible, regardless of approximation capacity.
+
+% Finally, we included an exploratory study of the classical $\tanh$ activation. 
+% These results highlight a sharp dichotomy: $\tanh$ networks are highly effective in 
+% collocation methods, achieving very small errors with robust solvers, but they are 
+% even more unstable than ReLU$^k$ in variational settings. 
+% This observation helps to 
+% explain the empirical success of $\tanh$ in PINN-style approaches and the greater suitability of ReLU-type activations for variational formulations. 
+
+Overall, this work demonstrates both the promise and the limitations of linearized neural networks for high-dimensional function approximation problems and PDEs. 
+The numerical evidence points clearly to conditioning as a major barrier to scalability in variational methods, while also showing that collocation can yield accurate results despite a lack of complete error analysis. 
+Future research should therefore focus on developing effective preconditioning strategies and establishing rigorous error analysis for collocation-based approaches, so that linearized shallow networks can be used more reliably for challenging 
+scientific computing problems.
+
+% \section{Perturbation analysis of the linear system}
+
+\begin{comment}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/1DTanh-Collacation-Scheme1.png}\\
+    \includegraphics[width=0.95\linewidth]{figure/1DTanh-Variational-Scheme1.png}\\
+    \caption{1D $L^2$-minimization. Target function $u(x) = \sin(\frac{\pi}{2})x$. Initialization scheme 1. \textbf{Above:} Using Collocation methods. \textbf{Below:} Variational formulation. Both uses Gaussian quadrature points and weights. Number of test points twice as the number of collocation points. The errors are averaged over 5 trials. }
+    \label{fig:1dl2minimization-tanh}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/2DTanh-Collocation-Scheme1.png}\\
+    \includegraphics[width=0.95\linewidth]{figure/2DTanh-Collocation-Scheme2.png}\\
+    \includegraphics[width=0.95\linewidth]{figure/2DTanh-Collocation-Scheme3.png}\\
+    \includegraphics[width=0.95\linewidth]{figure/2DTanh-Collocation-Scheme4.png}\\
+    \caption{2D $L^2$-minimization. Target function $u(x_1,x_2) = \sin(\frac{\pi}{2}x_1) \sin(\frac{\pi}{2}x_2)$. Using Collocation methods:Gaussian quadrature points and weights. Number of test points twice as the number of collocation points. The errors are averaged over 5 trials.   }
+    \label{fig:2dl2minimization-tanh}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+\includegraphics[width=0.95\linewidth]{figure/3DTanh-Collocation-Scheme1.png} \\
+\includegraphics[width=0.95\linewidth]{figure/3DTanh-Collocation-Scheme2.png}\\
+\includegraphics[width=0.95\linewidth]{figure/3DTanh-Collocation-Scheme3.png}
+\\
+\includegraphics[width=0.95\linewidth]{figure/3DTanh-Collocation-Scheme4.png}
+    \caption{3D $L^2$-minimization. Target function $u(x_1,x_2,x_3) = \sin(\frac{\pi}{2}x_1) \sin(\frac{\pi}{2}x_2)  \sin(\frac{\pi}{2}x_3)$. Using Collocation methods: Gaussian quadrature points and weights. Number of test points twice as the number of collocation points. The errors are averaged over 5 trials. }
+    \label{fig:3dl2minimization-tanh}
+\end{figure}
+
+\textbf{Analysis of the Linear Systems arise from the variational formulation and collocation method.}
+In the 1D experiment in Fig \ref{fig:1dl2minimization-tanh}, the observed difference in numerical accuracy between the variational formulation and collocation method is interesting, given that the underlying linear systems are mathematically equivalent when using the same quadrature rule. Let us analyze this equivalence:
+
+For the $L^2$-minimization problem, we seek to minimize:
+\[ \|u - u_n\|_{L^2}^2 = \int_\Omega |u(x) - u_n(x)|^2 dx \]
+where \( u_n(x) = \sum_{i=1}^n a_i \sigma(\omega_i \cdot x + b_i) \).
+
+The variational formulation leads to the normal equations:
+\[ \int_\Omega u_n(x) \sigma(\omega_j \cdot x + b_j) dx = \int_\Omega u(x) \sigma(\omega_j \cdot x + b_j) dx \quad \text{for } j = 1,\dots,n \]
+
+When using collocation points \(\{x_k\}_{k=1}^m\) with weights \(\{w_k\}_{k=1}^m\), the least squares problem becomes:
+\[ \min_{a_i} \sum_{k=1}^m w_k |u(x_k) - u_n(x_k)|^2 \]
+
+The normal equations for this least squares problem are:
+\[ \sum_{k=1}^m w_k u_n(x_k) \sigma(\omega_j \cdot x_k + b_j) = \sum_{k=1}^m w_k u(x_k) \sigma(\omega_j \cdot x_k + b_j) \quad \text{for } j = 1,\dots,n \]
+
+When the same quadrature rule is used to approximate the integrals in the variational formulation, the resulting linear systems are identical. The observed difference in numerical accuracy must therefore stem from the different numerical methods used to solve these systems: direct solver for the variational formulation versus QR factorization followed by back substitution for the collocation method.
+
+\end{comment}
+
+\appendix
+\section{Supplementary experiments on $L^2$-minimization} \label{app:supp-l2}
+We report additional numerical results for ReLU activations to complement the ReLU$^k$ experiments presented in the main text. The experimental setup and evaluation criteria are the same as those in Section~\ref{subsec:relul2}, and the results exhibit similar error decay behavior across dimensions $d=1$--$6$.
+
+\subsection{Continuous $L^2$-minimization}
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimizationrelu-1d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimizationrelu-2d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimizationrelu-3d.png} \\
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimizationrelu-4d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimizationrelu-5d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2minimizationrelu-6d.png} 
+%     \caption{Error decay for continuous $L^2$-minimization (variational formulation) 
+%     in dimensions $d=1$--$6$.}
+%     \label{fig:L2-variational-relu}
+% \end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/L2_convergence_vs_neurons_relu1.png}
+    \caption{\textcolor{blue}{Error decay for continuous $L^2$-minimization (variational formulation) 
+    in dimensions $d=1$--$6$.}}
+    \label{fig:L2-variational-relu}
+\end{figure}
+
+
+\subsection{Discrete $\ell^2$-regression}
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure/l2regressionrelu-1d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2regressionrelu-2d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2regressionrelu-3d.png} \\
+%     \includegraphics[width=0.325\linewidth]{figure/l2regressionrelu-4d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2regressionrelu-5d.png}
+%     \includegraphics[width=0.325\linewidth]{figure/l2regressionrelu-6d.png} 
+%     \caption{Error decay for discrete $\ell^2$-regression (collocation formulation) 
+%     in dimensions $d=1$--$6$.}
+%     \label{fig:L2-regression-relu}
+% \end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figure/l2regression_convergence_vs_neurons_relu1.png}
+    \caption{\textcolor{blue}{Error decay for discrete $\ell^2$-regression (collocation formulation) 
+    in dimensions $d=1$--$6$.}}
+    \label{fig:L2-regression-relu}
+\end{figure}
+
+\section{Variational least-squares formulation}
+\label{app:least-square}
+
+Now we consider the variational least-squares formulation for the $L^2$-minimization task.
+Let $u$ be the target function, and let $\{ \phi_j \}_{j = 1}^n$ be the pre-determined neurons. 
+We seek to solve the $L^2$-minimization problem on the subspace $\text{span}\{  \phi_j \}_{j = 1}^n$. 
+Given a quadrature rule, $\int_{\Omega} f(x) dx \approx \sum_{i =1}^N w_i f(x_i)$, where $w_i$, $x_i$ are the quadrature weights and quadrature points, respectively,  the corresponding linear system for the $L^2$-minimization is
+\begin{equation}
+    M \mathbf{a} = \mathbf{b}, 
+\end{equation}
+where $M_{ij}= \sum_{k = 1}^N w_k \phi_j(x_k)  \phi_i(x_k)$, \textcolor{blue}{$\mathbf{b}_i = \sum_{k = 1}^N w_k \phi_i(x_k) u(x_k) $}.
+In a more compact matrix form, we have 
+\begin{equation}
+    M = \Phi^T W \Phi, \mathbf{b} = \Phi^T W \mathbf{u},  
+\end{equation}
+where
+\begin{itemize}
+    \item $\Phi \in \mathbb{R}^{N\times n}$ is the matrix of basis functions evaluated at all the quadrature points;
+    \item $W = \text{diag}(w_1,\dots,w_N)$
+    \item $\mathbf{u} = (u(x_1), \dots, u(x_N)) $ is the function values of the target function at all the quadrature points. 
+\end{itemize} 
+The above matrix form also has an equivalent minimization formulation given by 
+\begin{equation}
+    \min_{\mathbf{a} \in \mathbb{R}^n} \ \| \Phi \mathbf{a} - \mathbf{u} \|_{W}^2,
+\end{equation}
+where $\| \cdot\|_W$ denotes the norm induced by the weighted inner product $\langle u,v \rangle_W := \sum_{i = 1}^N w_i u_i v_i$ on $\mathbb{R}^N$. 
+The following theorem establishes the equivalence.
+\begin{theorem}
+\textcolor{blue}{Assume that the quadrature weights are positive, so that
+$W=\operatorname{diag}(w_1,\dots,w_N)\succ0$.} 
+Then any minimizer $\mathbf{a}$ of the weighted least-squares problem
+\begin{equation}\label{eq:ls}
+    \min_{\mathbf{a} \in \mathbb{R}^n} \ \| \Phi \mathbf{a} - \mathbf{u} \|_{W}^2
+\end{equation}
+satisfies the \emph{normal equations}
+\begin{equation}\label{eq:ne}
+    \Phi^\top W \Phi \, \mathbf{a} \;=\; \Phi^\top W \mathbf{u} .
+\end{equation}
+Conversely, any solution of \eqref{eq:ne} is a stationary point of \eqref{eq:ls}. 
+\textcolor{blue}{In addition, if $\Phi$ has full column rank, the minimizer of \eqref{eq:ls} is a unique global minimizer and is given by}
+\begin{equation}\label{eq:sol}
+    \mathbf{a} \;=\; (\Phi^\top W \Phi)^{-1} \Phi^\top W \mathbf{u} .
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Define
+\[
+L(\mathbf{a})\;:=\;\|\Phi \mathbf{a}-\mathbf{u}\|_W^2=(\Phi \mathbf{a}-\mathbf{u})^\top W(\Phi \mathbf{a}-\mathbf{u}).
+\]
+Expanding and using $W^\top=W$,
+\[
+L(\mathbf{a})=\mathbf{a}^\top\Phi^\top W\Phi\,\mathbf{a}-2\,\mathbf{u}^\top W\Phi\,\mathbf{a}+\mathbf{u}^\top W\mathbf{u} .
+\]
+The gradient of $L$ is 
+\[
+\nabla L(\mathbf{a})=2\,\Phi^\top W(\Phi \mathbf{a}-\mathbf{u}).
+\]
+Hence any minimizer $\mathbf{a}$ of \eqref{eq:ls} must satisfy the first-order optimality
+condition $\nabla L(\mathbf{a})=0$, i.e.
+\[
+\Phi^\top W\Phi\,\mathbf{a}=\Phi^\top W\mathbf{u},
+\]
+which are exactly the normal equations \eqref{eq:ne}.
+\textcolor{blue}{
+Conversely, $L$ is convex because its Hessian is
+\[
+\nabla^2 L(\mathbf{a})=2\,\Phi^\top W\Phi\succeq 0 .
+\]
+}
+For a convex function, any stationary point is a global minimizer; therefore any
+solution of \eqref{eq:ne} minimizes \eqref{eq:ls}. 
+
+\textcolor{blue}{Finally, if, in addition, $\Phi$ has full column rank, then $\Phi^\top W\Phi\succ 0$, so $L$ is
+strictly convex and the minimizer is unique and given by
+\[
+\mathbf{a}=(\Phi^\top W\Phi)^{-1}\Phi^\top W\mathbf{u},
+\]
+which is \eqref{eq:sol}.}
+% If $\Phi^\top W\Phi$ is singular, the set of minimizers
+% is affine and the minimum–Euclidean-norm solution is
+% $a=(\Phi^\top W\Phi)^{\dagger}\Phi^\top W\mathbf{u}$ (Moore--Penrose pseudoinverse).
+% \medskip
+% \emph{Equivalent LS form.}  If $W^{1/2}$ denotes any symmetric square root of $W$
+% (e.g., Cholesky when $W\succ0$), set $A=W^{1/2}\Phi$ and $b=W^{1/2}y$. Then
+% \[
+% \|\Phi a-y\|_W^2=\|A a-b\|_2^2,
+% \]
+% whose normal equations are $(A^\top A)a=A^\top b$, i.e., again
+% $\Phi^\top W\Phi\,a=\Phi^\top Wy$.
+\end{proof}
+
+\begin{remark}[Numerical advantages of solving the least–squares form]
+It is advantageous to solve the weighted least–squares problem
+\[
+\min_\mathbf{a} \|W^{1/2}(\Phi \mathbf{a}-\mathbf{u})\|_2
+\]
+directly, rather than forming and solving the normal equations
+$(\Phi^\top W\Phi)\mathbf{a}=\Phi^\top W \mathbf{u}$. 
+Forming the normal equations squares the singular values of
+$W^{1/2}\Phi$, yielding
+\[
+\kappa_2(\Phi^\top W \Phi) = \kappa_2(W^{1/2}\Phi)^2.
+\]
+This squaring of the condition number not only amplifies numerical errors such as quadrature and roundoff errors, but also makes certain singular values too small to be reliably resolved numerically, leading to a more sensitive and less reliable linear system in practice.
+\end{remark}
+Finally, we plot the singular values of the least-squares system arising from the discrete $\ell^2$-regression with $\tanh$ shallow neural networks in
+Figure~\ref{fig:svd-tanh}.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{figure/l2-tanh1d-PetrushevR8-svd-n128.png}
+    \caption{Singular values of the least-squares system for the discrete
+    $\ell^2$-regression problem using a $\tanh$ shallow neural network with
+    width $n = 128$, constructed via Petrushev's scheme. The rapid decay and subsequent flattening of the singular spectrum show that many singular values are extremely small, which explains the poor conditioning of the least-squares system and motivates avoiding the formation of normal equations.}
+    \label{fig:svd-tanh}
+\end{figure}
+
+% \subsection{ReLU$^k$ neural networks}
+% In this experiment, we compare two approaches for solving the $L^2$ minimization problem using a one-dimensional ReLU$^2$ network. The first method is the direct mass matrix assembly and the other is the variational least-squares formulation. 
+% Both methods employ the same quadrature rules and the same set of sampling points; therefore, any discrepancy in numerical performance is attributed to the conditioning of the resulting linear systems rather than to differences in discretization. 
+% The results are plotted in Figure \ref{fig:L2min-compare-1drelu2}. We observe that using the variational least-squares formulation yield slightly more stable numerical accuracy as the neuron number increases. 
+
+
+
+
+% \subsection{Tanh neural networks}
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_1d_sin_m_1_variational_R_m_8_gauss_1024_3_ls_eqn.png}
+% \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_1d_sin_m_2_variational_R_m_8_gauss_1024_3_ls_eqn.png}
+% \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_1d_sin_m_4_variational_R_m_8_gauss_1024_3_ls_eqn.png}
+%     \caption{1D $L^2$-minimization. Target function $u(x) = \sin(m \pi x)$, $m = 1,2,4$. Variational least-squares system. } \label{fig:1dl2minimization-var-ls-system}
+% \end{figure}
+
+
+% \begin{figure}[H]
+%     \centering
+% \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_2d_sin_m_1_variational_R_m_8_ls_eqn.png}
+% \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_2d_sin_m_1_variational_R_m_8_ls_eqn.png}
+% \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_2d_sin_m_4_variational_R_m_8_ls_eqn.png}
+%     \caption{2D $L^2$-minimization. Target function $u(x) = \sin(m \pi x_1)\sin(m \pi x_2)$, $m = 1,2,4$. Variational least-squares system. } \label{fig:2dl2minimization-var-ls-system}
+% \end{figure}
+
+
+% \section{Investigate the number of collocation points}
+
+% In the following experiments, we investigate if we can still get convergence using the discrete $l^2$ regression by setting the number of collocation points $M$, to be a multiple of the number of neurons $n$. 
+
+% \begin{figure}
+%     \centering
+%     \includegraphics[width=0.32\linewidth]{figure/l2-d1k1.png}  \includegraphics[width=0.32\linewidth]{figure/l2-d1k2.png}
+%      \includegraphics[width=0.32\linewidth]{figure/l2-d1k3.png} \\
+%       \includegraphics[width=0.32\linewidth]{figure/l2-d2k1.png}
+%        \includegraphics[width=0.32\linewidth]{figure/l2-d2k2.png}
+%         \includegraphics[width=0.32\linewidth]{figure/l2-d2k3.png}\\
+%          \includegraphics[width=0.32\linewidth]{figure/l2-d3k1.png}
+%           \includegraphics[width=0.32\linewidth]{figure/l2-d3k2.png}
+%            \includegraphics[width=0.32\linewidth]{figure/l2-d3k3.png} \\
+%             \includegraphics[width=0.32\linewidth]{figure/l2-d4k1.png}
+%           \includegraphics[width=0.32\linewidth]{figure/l2-d4k2.png}
+%            \includegraphics[width=0.32\linewidth]{figure/l2-d4k3.png}
+           
+%     \caption{Discrete $l^2$ regression. Set the number of collocation points to be $M  = Cn$, for different values of $C$. The errors are measured using accurate Gauss quadrature rules in dimensions 1,2,3. In higher dimensions, the errors are computed using QMC.}
+%     \label{fig:collocation-study}
+% \end{figure}
+
+\begin{comment}
+    
+\section{Petrushev's scheme}
+
+While the main focus of this paper is on deterministic ReLU$^k$ networks, 
+we briefly investigate the classical $\tanh$ activation, which is widely used in 
+scientific machine learning. 
+
+\textbf{Setup.} 
+We consider $L^2$ minimization problems in one and two dimensions, 
+with target functions taken from the sinusoidal family. 
+In one dimension we use
+\[
+u(x) = \sin(m \pi x), \quad m \in \{1,2,4\},
+\]
+and in two dimensions
+\[
+u(x) = \sin(m \pi x_1)\,\sin(m \pi x_2), \quad m \in \{1,2,4\}.
+\]
+The trial space is chosen as $V_n = \mathrm{span}\{\phi_j\}_{j=1}^n$, 
+with neuron functions
+\[
+\phi_j(x) = \tanh(\omega_j \cdot x + b_j).
+\]
+
+To fix the hidden layer parameters, we adopt Petrushev's initialization scheme~\cite{petrushev1998approximation}. 
+Specifically, we construct a quasi--uniform grid $\Theta_1=\{\omega_i\}_{i=1}^{n_1}$ on the sphere $S^{d-1}$ 
+and a uniform grid $\Theta_2=\{b_j\}_{j=1}^{n_2}$ on the interval $[-R,R]$. 
+The tensor product 
+\[
+\Theta=\{(\omega_i,b_j):\omega_i\in\Theta_1,\ b_j\in\Theta_2\}
+\]
+then serves as the set of neuron parameters.
+
+\subsubsection{Variational formulation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_1d_sin_m_1_variational_R_m_8_gauss_512_5.png}
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_1d_sin_m_2_variational_R_m_8_gauss_512_5.png}
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_1d_sin_m_4_variational_R_m_8_gauss_512_5.png} 
+    \caption{1D $L^2$ minimization with $\tanh$ activations. Variational formulation. 
+    Target function $u(x) = \sin(m\pi x)$ for $m=1,2,4$. 
+    Hidden parameters chosen using Petrushev's scheme.}
+    \label{fig:1dl2-tanh-var}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_2d_sin_m_1_variational_R_m_8.png}
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_2d_sin_m_2_variational_R_m_8.png}
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_2d_sin_m_4_variational_R_m_8.png} 
+    \caption{2D $L^2$ minimization with $\tanh$ activations. Variational formulation. 
+    Target function $u(x) = \sin(m\pi x_1)\sin(m\pi x_2)$ for $m=1,2,4$. 
+    Hidden parameters chosen using Petrushev's scheme.}
+    \label{fig:2dl2-tanh-var}
+\end{figure}
+
+\subsubsection{Collocation formulation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_1d_sin_m_1_collocation_R_m_8.png}
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_1d_sin_m_2_collocation_R_m_8.png}
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_1d_sin_m_4_collocation_R_m_8.png}
+    \caption{1D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+    Target function $u(x) = \sin(m\pi x)$ for $m=1,2,4$. 
+    Hidden parameters chosen using Petrushev's scheme.}
+    \label{fig:1dl2-tanh-col}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_2d_sin_m_1_collocation_R_m_8.png}
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_2d_sin_m_2_collocation_R_m_8.png}
+    \includegraphics[width=0.325\linewidth]{figure-petrushev/petrushev_2d_sin_m_4_collocation_R_m_8.png}
+    \caption{2D $L^2$ minimization with $\tanh$ activations. Collocation formulation. 
+    Target function $u(x) = \sin(m\pi x_1)\sin(m\pi x_2)$ for $m=1,2,4$. 
+    Hidden parameters chosen using Petrushev's scheme.}
+    \label{fig:2dl2-tanh-col}
+\end{figure}
+
+\textbf{Observations.}  
+For the $L^2$ minimization tasks in both one and two dimensions, the collocation formulation 
+achieves higher accuracy than the variational formulation. 
+Moreover, Petrushev's initialization scheme yields highly accurate approximations 
+for $\tanh$-activated shallow networks. 
+Errors below $10^{-10}$ are obtained with only a few hundred to a thousand neurons, 
+demonstrating very rapid convergence, substantially faster than that observed 
+for ReLU$^k$ shallow networks.
+
+\end{comment}
+
+\nocite{siegel2023greedy, SX:2024, LS:2024, Temlyakov:2015greedyconvex}
+\bibliography{reference} 
+\bibliographystyle{ieeetr}
+
+
+\end{document}

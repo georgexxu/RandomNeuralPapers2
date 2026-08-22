@@ -1,0 +1,129 @@
+\begin{thebibliography}{10}
+
+\bibitem{Cuomo:2022}
+S.~Cuomo, V.~S. Di~Cola, F.~Giampaolo, G.~Rozza, M.~Raissi, and F.~Piccialli, ``Scientific machine learning through physics-informed neural networks: {W}here we are and what’s next,'' {\em J. Sci. Comput.}, vol.~92, no.~3, p.~Paper No.~88, 2022.
+
+\bibitem{RPK:2019}
+M.~Raissi, P.~Perdikaris, and G.~E. Karniadakis, ``Physics-informed neural networks: {A} deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations,'' {\em J. Comput. Phys.}, vol.~378, pp.~686--707, 2019.
+
+\bibitem{EY:2018}
+W.~E and B.~Yu, ``The deep {R}itz method: a deep learning-based numerical algorithm for solving variational problems,'' {\em Commun. Math. Stat.}, vol.~6, no.~1, pp.~1--12, 2018.
+
+\bibitem{Xu:2020}
+J.~Xu, ``Finite neuron method and convergence analysis,'' {\em Commun. Comput. Phys.}, vol.~28, no.~5, pp.~1707--1745, 2020.
+
+\bibitem{HSTX:2022}
+Q.~Hong, J.~W. Siegel, Q.~Tan, and J.~Xu, ``On the activation function dependence of the spectral bias of neural networks,'' {\em arXiv preprint arXiv:2208.04924}, 2022.
+
+\bibitem{GBC:2016}
+I.~Goodfellow, Y.~Bengio, and A.~Courville, {\em Deep Learning}.
+\newblock MIT Press, Cambridge, MA, 2016.
+\newblock \url{http://www.deeplearningbook.org}.
+
+\bibitem{CGPPT:2020}
+E.~C. Cyr, M.~A. Gulian, R.~G. Patel, M.~Perego, and N.~A. Trask, ``Robust training and initialization of deep neural networks: {A}n adaptive basis viewpoint,'' in {\em Proceedings of The First Mathematical and Scientific Machine Learning Conference}, vol.~107 of {\em Proceedings of Machine Learning Research}, pp.~512--536, PMLR, 2020.
+
+\bibitem{AS:2021}
+M.~Ainsworth and Y.~Shin, ``Plateau phenomenon in gradient descent training of {R}e{LU} networks: Explanation, quantification, and avoidance,'' {\em SIAM J. Sci. Comput.}, vol.~43, no.~5, pp.~A3438--A3468, 2021.
+
+\bibitem{AS:2022}
+M.~Ainsworth and Y.~Shin, ``{A}ctive {N}euron {L}east {S}quares: {A} training method for multivariate rectified neural networks,'' {\em SIAM J. Sci. Comput.}, vol.~44, no.~4, pp.~A2253--A2275, 2022.
+
+\bibitem{PXX:2022}
+J.~Park, J.~Xu, and X.~Xu, ``A neuron-wise subspace correction method for the finite neuron method,'' {\em Journal of Computational Mathematics}, vol.~43, no.~6, pp.~1488--1511, 2025.
+
+\bibitem{DT:1996}
+R.~A. DeVore and V.~N. Temlyakov, ``Some remarks on greedy algorithms,'' {\em Adv. Comput. Math.}, vol.~5, no.~1, pp.~173--187, 1996.
+
+\bibitem{Jones:1992}
+L.~K. Jones, ``A simple lemma on greedy approximation in {H}ilbert space and convergence rates for projection pursuit regression and neural network training,'' {\em Ann. Statist.}, vol.~20, no.~1, pp.~608--613, 1992.
+
+\bibitem{MZ:1993}
+S.~G. Mallat and Z.~Zhang, ``Matching pursuits with time-frequency dictionaries,'' {\em IEEE Trans. Signal Process.}, vol.~41, no.~12, pp.~3397--3415, 1993.
+
+\bibitem{Temlyakov:2011}
+V.~Temlyakov, {\em Greedy Approximation}.
+\newblock Cambridge University Press, Cambridge, 2011.
+
+\bibitem{DPW:2021}
+A.~Dereventsov, A.~Petrosyan, and C.~Webster, ``Greedy shallow networks: {A}n approach for constructing and training neural networks,'' {\em Int. J. Artif. Intell. Res.}, vol.~19, no.~2, 2021.
+
+\bibitem{siegel2023greedy}
+J.~W. Siegel, Q.~Hong, X.~Jin, W.~Hao, and J.~Xu, ``Greedy training algorithms for neural networks and applications to pdes,'' {\em Journal of Computational Physics}, vol.~484, p.~112084, 2023.
+
+\bibitem{SX:2022a}
+J.~W. Siegel and J.~Xu, ``Optimal convergence rates for the orthogonal greedy algorithm,'' {\em IEEE Trans. Inform. Theory}, vol.~68, no.~5, pp.~3354--3361, 2022.
+
+\bibitem{SX:2024}
+J.~W. Siegel and J.~Xu, ``Sharp bounds on the approximation rates, metric entropy, and $n$-widths of shallow neural networks,'' {\em Found. Comput. Math.}, vol.~24, pp.~481--537, 2024.
+
+\bibitem{XX:2025}
+J.~Xu and X.~Xu, ``Randomized greedy algorithms for neural network optimization in solving partial differential equations,'' {\em Journal of Scientific Computing}, vol.~105, no.~1, p.~26, 2025.
+
+\bibitem{CCEY:2022}
+J.~Chen, X.~Chi, W.~E, and Z.~Yang, ``Bridging traditional and machine learning-based algorithms for solving {PDE}s: {T}he random feature method,'' {\em J. Mach. Learn.}, vol.~1, pp.~268--298, 2022.
+
+\bibitem{EMW:2020}
+W.~E, C.~Ma, and L.~Wu, ``A comparative analysis of optimization and generalization properties of two-layer neural network and random feature models under gradient descent dynamics,'' {\em Sci. China Math.}, vol.~63, no.~7, pp.~1235--1258, 2020.
+
+\bibitem{LL:2024}
+A.~Lamperski and T.~Lekang, ``Approximation with random shallow {R}e{LU} networks with applications to model reference adaptive control,'' {\em arXiv preprint arXiv:2403.17142}, 2024.
+
+\bibitem{RR:2007}
+A.~Rahimi and B.~Recht, ``Random features for large-scale kernel machines,'' in {\em Advances in Neural Information Processing Systems}, vol.~20, Curran Associates, Inc., 2007.
+
+\bibitem{DL:2021}
+S.~Dong and Z.~Li, ``Local extreme learning machines and domain decomposition for solving linear and nonlinear partial differential equations,'' {\em Comput. Methods Appl. Mech. Engrg.}, vol.~387, p.~Paper No.~114129, 2021.
+
+\bibitem{HZS:2006}
+G.-B. Huang, Q.-Y. Zhu, and C.-K. Siew, ``Extreme learning machine: {T}heory and applications,'' {\em Neurocomputing}, vol.~70, no.~1-3, pp.~489--501, 2006.
+
+\bibitem{LLR:2024}
+C.-O. Lee, Y.~Lee, and B.~Ryoo, ``A nonoverlapping domain decomposition method for extreme learning machines: {E}lliptic problems,'' {\em arXiv preprint arXiv:2406.15959}, 2024.
+
+\bibitem{LMX2025}
+X.~Liu, T.~Mao, and J.~Xu, ``Integral representations of sobolev spaces via {R}e{LU}$^k$ activation function and optimal error estimates for linearized networks,'' {\em arXiv preprint arXiv:2505.00351}, 2025.
+
+\bibitem{MX:2025lower}
+T.~Mao and J.~Xu, ``Sharp lower bounds for linearized {R}e{LU}$^k$ approximation on the sphere,'' {\em arXiv preprint arXiv:2510.04060}, 2025.
+
+\bibitem{HLZZ:2025}
+R.~Y. He, Y.~Liang, H.~Zhao, and Y.~Zhong, ``What can one expect when solving {PDE}s using shallow neural networks?,'' {\em arXiv preprint arXiv:2510.27658}, 2025.
+
+\bibitem{mhaskar1996neural}
+H.~N. Mhaskar, ``Neural networks for optimal approximation of smooth and analytic functions,'' {\em Neural computation}, vol.~8, no.~1, pp.~164--177, 1996.
+
+\bibitem{Barron:1993}
+A.~R. Barron, ``Universal approximation bounds for superpositions of a sigmoidal function,'' {\em IEEE Trans. Inform. Theory}, vol.~39, no.~3, pp.~930--945, 1993.
+
+\bibitem{siegel2020approximation}
+J.~W. Siegel and J.~Xu, ``Approximation rates for neural networks with general activation functions,'' {\em Neural Networks}, vol.~128, pp.~313--321, 2020.
+
+\bibitem{wang2024extreme}
+Y.~Wang and S.~Dong, ``An extreme learning machine-based method for computational pdes in higher dimensions,'' {\em Computer Methods in Applied Mechanics and Engineering}, vol.~418, p.~116578, 2024.
+
+\bibitem{Caflisch:1998}
+R.~E. Caflisch, ``Monte {C}arlo and quasi-{M}onte {C}arlo methods,'' {\em Acta Numer.}, vol.~7, pp.~1--49, 1998.
+
+\bibitem{MC:1995}
+W.~J. Morokoff and R.~E. Caflisch, ``Quasi-{M}onte {C}arlo integration,'' {\em J. Comput. Phys.}, vol.~122, no.~2, pp.~218--230, 1995.
+
+\bibitem{gonzalez2010measurement}
+{\'A}.~Gonz{\'a}lez, ``Measurement of areas on a sphere using fibonacci and latitude--longitude lattices,'' {\em Mathematical geosciences}, vol.~42, no.~1, pp.~49--64, 2010.
+
+\bibitem{du1999centroidal}
+Q.~Du, V.~Faber, and M.~Gunzburger, ``Centroidal voronoi tessellations: Applications and algorithms,'' {\em SIAM review}, vol.~41, no.~4, pp.~637--676, 1999.
+
+\bibitem{du2003constrained}
+Q.~Du, M.~D. Gunzburger, and L.~Ju, ``Constrained centroidal voronoi tessellations for surfaces,'' {\em SIAM Journal on Scientific Computing}, vol.~24, no.~5, pp.~1488--1506, 2003.
+
+\bibitem{petrushev1998approximation}
+P.~P. Petrushev, ``Approximation by ridge functions and neural networks,'' {\em SIAM Journal on Mathematical Analysis}, vol.~30, no.~1, pp.~155--189, 1998.
+
+\bibitem{LS:2024}
+Y.~Li and J.~W. Siegel, ``Entropy-based convergence rates of greedy algorithms,'' {\em Math. Models Methods Appl. Sci.}, vol.~34, no.~5, pp.~779--802, 2024.
+
+\bibitem{Temlyakov:2015greedyconvex}
+V.~Temlyakov, ``Greedy approximation in convex optimization,'' {\em Constr. Approx.}, vol.~41, no.~2, pp.~269--296, 2015.
+
+\end{thebibliography}
