@@ -314,12 +314,13 @@ def initialize_w_b_sphere(my_model,R_m):
         points = torch.stack((x, y, z), dim=1)
         my_model.fc1.weight.data[:,:] = points[:,0:2] * R_m
         my_model.fc1.bias.data[:] = points[:,2] * R_m 
-    # elif in_feats == 1:
-    #     theta = torch.linspace(0, 2*pi, neuron_nums+1)[:-1]
-    #     w1 = torch.cos(theta) * R_m
-    #     b = torch.sin(theta) * R_m
-    #     my_model.fc1.weight.data[:,0] = w1[:]
-    #     my_model.fc1.bias.data[:] = b[:]
+    elif in_feats == 1:
+        # Match l2regression-nd-tanh-petrushev.ipynb: points on the semicircle
+        theta = torch.linspace(0, pi, neuron_nums + 1)[:-1]
+        w1 = torch.cos(theta) * R_m
+        b = torch.sin(theta) * R_m
+        my_model.fc1.weight.data[:, 0] = w1[:]
+        my_model.fc1.bias.data[:] = b[:]
     else: 
         w_b = torch.randn(neuron_nums,in_feats + 1) 
         w_b = w_b / torch.norm(w_b,dim=1).view(-1,1) 
