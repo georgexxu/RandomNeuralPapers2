@@ -1,128 +1,178 @@
 # RandomNeuralPapers2
-This git repo contains code for the paper Solving High-Dimensional PDEs Using Linearized Neural Networks https://arxiv.org/abs/2601.11771
 
-Numerical experiments for **random feature methods (RFM / ELM)** applied to function approximation and PDEs: shallow networks with fixed random or predetermined inner weights, and a linear outer layer solved by least squares / variational assembly.
+Code for [Solving High-Dimensional PDEs Using Linearized Neural Networks](https://arxiv.org/abs/2601.11771).
+
+Numerical experiments for **linearized / random-feature** shallow networks: inner weights are fixed (random or predetermined), and the outer layer is obtained by a linear solve (variational assembly or collocation least squares).
+
+## Setup
+
+Typical stack: **PyTorch**, NumPy, SciPy, Matplotlib (double precision). The ReLU scripts also use **SymPy**. GPU is used if `torch.cuda.is_available()`.
+
+Activate the torch environment used for the paper, then run scripts from the directory that contains them (relative data paths). Shared helpers live in `code/utils_quad_init.py`; the tanh Python scripts add `code/` to `sys.path` automatically.
+
+```bash
+# example
+conda activate pytorch   # or your torch env
+cd code/L2Fitting/tanh
+python L2minimizationVariational1d2dRFM.py
+```
+
+To replot from saved `.npz` files without rerunning experiments, pass `--plot-only` where that flag exists (tanh L2 scripts and `tanh_ellipticProblem1d2d_sphere.py`).
+
+Paper numbering used below matches `reluk_numerical_paper/main.tex` §4:
+
+- **§4.1** ReLU\(^k\) networks (L², collocation, condition numbers, Neumann PDE, QMC)
+- **§4.2** tanh networks (L², collocation, deterministic Petrushev / sphere schemes, elliptic collocation)
+
+---
 
 ## Repository layout
 
 ```
 RandomNeuralPapers2/
-├── code/                 # Active experiments and utilities
-│   ├── RFM_L2Fitting/    # L² regression / fitting
-│   ├── RFM_H1Fitting/    # H¹ / Neumann / PINN-style PDE experiments
-│   ├── GPTCodebase/      # Small least-squares demos
-│   └── utils_quad_init.py
-├── archived/             # Older / unused notebooks and code
-├── 0figure/              # Selected paper / report figures
-└── paper/                # Reference PDFs
+├── code/
+│   ├── utils_quad_init.py   # models, quadrature / MC, weight init
+│   ├── L2Fitting/
+│   │   ├── tanh/            # §4.2 tanh L² experiments
+│   │   └── reluk/           # §4.1 ReLU^k L² experiments
+│   └── H1Fitting/           # §4.1.4 Neumann + QMC; §4.2 tanh elliptic PDE
+├── archived/                # older notebooks, not the reproduction path
+└── reluk_numerical_paper/   # paper source
 ```
 
-Typical stack: **PyTorch**, NumPy, SciPy, Matplotlib (double precision by default).
+Jupyter notebooks next to the scripts are the original research / development code (exploratory implementations, intermediate runs, parameter studies). The standalone `.py` files are the consolidated reproduction path.
 
 ---
 
-## `code/` — overview
+## `code/L2Fitting/tanh/` — tanh L² minimization (§4.2)
 
-| Path | Role |
+In a working torch environment these scripts run as-is (1D and 2D). Results and figures are written to `data/`.
+
+| File | Role |
 |------|------|
-| `utils_quad_init.py` | Shared models (`ReLU^k`, `tanh`, cosine), quadrature / Monte Carlo generators, and weight init (uniform, sphere, Petrushev, Gaussian). |
-| `GPTCodebase/` | Discrete least-squares demos and solver diagnostics. |
-| `RFM_L2Fitting/` | \(L^2\) approximation with ReLU\(^k\) and tanh features. |
-| `RFM_H1Fitting/` | Weak-form Neumann RFM and strong-form PINN / collocation experiments. |
+| `L2minimizationVariational1d2dRFM.py` | Variational formulation; **random** (uniform) sampling of nonlinear parameters |
+| `l2regression1d2dRFM.py` | Collocation formulation; **random** sampling of nonlinear parameters |
+| `l2regression1d2dPetrushev.py` | Collocation; **Petrushev** scheme |
+| `l2regression1d2dSphere.py` | Collocation; **sphere** scheme |
+
+```bash
+cd code/L2Fitting/tanh
+python L2minimizationVariational1d2dRFM.py
+python l2regression1d2dRFM.py
+python l2regression1d2dPetrushev.py
+python l2regression1d2dSphere.py
+
+# figures only, from saved npz
+python l2regression1d2dRFM.py --plot-only
+```
+
+Related notebooks: `L2FittingRFMVariational.ipynb`, `l2regression-nd-tanh-petrushev.ipynb`.
 
 ---
 
-## `code/GPTCodebase/` — least-squares demos
+## `code/L2Fitting/reluk/` — ReLU\(^k\) L² minimization (§4.1)
 
-| File | Description |
-|------|-------------|
-| `l2regression1d.ipynb` | Fit \(\sin(kx)\) on \([-1,1]\) with a ReLU hinge dictionary. Compares **normal equations**, **QR/SVD least squares**, and **ridge / Tikhonov**. |
-| `lstsq-solver.ipynb` | Small notebook on least-squares solvers and singular values. |
+| File | Role |
+|------|------|
+| `L2minimization-nd.py` | Variational L² minimization, \(d = 1,\ldots,6\) |
+| `l2regression-nd.py` | Collocation L² minimization, \(d = 1,\ldots,6\) |
+| `L2minimization_condition.py` | Condition number of the mass matrix (variational form), \(d = 1,\ldots,6\) |
+
+**How to set \(k\).** In `L2minimization-nd.py` and `l2regression-nd.py`, set every `relu_k = ...` assignment to `1` or `2` (the default in the file is `2`). Each script then runs **all dimensions \(d=1\)–\(6\) sequentially** in one process.
+
+`L2minimization_condition.py` already loops `relu_k in (1, 2)` and `d = 1..6`; you do not need to edit \(k\) there.
+
+```bash
+cd code/L2Fitting/reluk
+python L2minimization-nd.py          # after setting relu_k
+python l2regression-nd.py            # after setting relu_k
+python L2minimization_condition.py   # k=1 and k=2, all d
+```
+
+If you re-run the first two scripts, they currently write `.npz` files to a local `results_relu/` folder. The paper plots use the committed data in `results_relu_L2/`. Copy or move the new files into `results_relu_L2/` before plotting, or keep using the committed files.
+
+### Plot error decay (§4.1.1–4.1.2)
+
+Data: `results_relu_L2/`. From that folder:
+
+```bash
+cd code/L2Fitting/reluk/results_relu_L2
+python plot_variational_convergence_relu_k.py
+python plot_collocation_convergence_relu_k.py
+```
+
+### Plot L² condition numbers (§4.1.3)
+
+Committed data: `condition_number_relu/`. (A fresh run of `L2minimization_condition.py` writes `condition_number_results/` unless you change `folder` in that script.)
+
+```bash
+cd code/L2Fitting/reluk
+python plot_L2_condition_numbers.py
+```
+
+Related notebooks: `L2MinimizationPredeterminedFeature-nd.ipynb`, `L2VariationalLeastSquares.ipynb`, `l2regression2d-reluk.ipynb`.
 
 ---
 
-## `code/RFM_L2Fitting/` — L² fitting
+## `code/H1Fitting/` — PDEs
 
-Approximate targets on \([-1,1]^d\) in the \(L^2\) sense with shallow random / predetermined feature networks.
+### ReLU\(^k\) Neumann problem (§4.1.4)
 
-### `reluk/` — ReLU\(^k\)
+| File | Role |
+|------|------|
+| `neumannProblemPredeterminedFeature_relu.ipynb` | Reproduce Neumann results for \(d = 2,\ldots,6\) (predetermined ReLU\(^k\) features, variational form). Run the cells for the dimension you want. |
+| `neumannProblem_relu_condition.py` | Condition numbers for the Neumann problem with **ReLU\(^3\)**, \(d = 1,\ldots,6\) |
 
-| File | Description |
-|------|-------------|
-| `l2regression2d-reluk.ipynb` | 2D \(L^2\) regression with ReLU\(^k\). |
-| `L2MinimizationPredeterminedFeature-nd.ipynb` | Multi-d \(L^2\) minimization with predetermined features (sphere / fixed-\(\omega\) sampling). |
-| `L2VariationalLeastSquares.ipynb` | Variational least-squares formulation of \(L^2\) fitting. |
-| `L2MinimizationConditionAnalysis.ipynb` | Conditioning of the \(L^2\) least-squares systems. |
-| `l2regression-nd.py` | Script form of multi-d \(L^2\) regression. |
-| `L2minimization-nd.py` | Script form of multi-d \(L^2\) minimization. |
-| `L2minimization-condition.py` | Script for condition-number experiments. |
-| `results_relu/` | Saved `.npz` results and `plot.ipynb` (variational LS vs mass-matrix assembly). |
+```bash
+cd code/H1Fitting
+python neumannProblem_relu_condition.py
+```
 
-Common targets: product sines, averaged-argument sines; sampling on \(S^d\) or with fixed \(\omega\).
+Committed condition-number data: `condition_number_neumann/`. Plot with:
 
-### `tanh/` — tanh
+```bash
+cd code/H1Fitting
+python plot_neumann_condition_numbers.py
+```
 
-| File | Description |
-|------|-------------|
-| `L2FittingRFMVariational.ipynb` | Variational / quadrature-consistent \(L^2\) fitting with tanh RFM. |
-| `l2regression-nd-tanh-petrushev.ipynb` | Multi-d tanh \(L^2\) regression with Petrushev-type sampling. |
-| `data/` | Saved errors, figures, and related read-out notebooks. |
-| `data_petrushev/` | Collocation / variational result figures for Petrushev sampling. |
+A fresh run of `neumannProblem_relu_condition.py` writes `condition_number_results/` unless you change `folder` in that script. Copy files into `condition_number_neumann/` to match the plot script, or point `folder` at `condition_number_neumann/`.
 
----
+(`neumannProblemPredeterminedFeature_relu_condition.py` is an older, cell-style version of the same experiment.)
 
-## `code/RFM_H1Fitting/` — H¹ / PDE experiments
+### QMC vs MC for nonlinear parameters (§4.1.5)
 
-Elliptic model problem \(-\operatorname{div}(\alpha\nabla u)+u=f\) (or strong form \(-\Delta u+u=f\)) with random or predetermined features.
+| File | Role |
+|------|------|
+| `neumannProblem3d_QMC_compare.py` | 3D Neumann, MC vs QMC feature parameters |
+| `neumannProblem5d_QMC_compare.py` | 5D Neumann, MC vs QMC |
+| `plot_qmc_compare.py` | Figures from saved data |
 
-| File | Description |
-|------|-------------|
-| `neumanProblemVariational_RFM.ipynb` | Weak / \(H^1\) (variational) RFM for the Neumann problem; primarily **tanh** features with random init (uniform / sphere / Petrushev). Galerkin-style mass+stiffness assembly and an \(H^1\) least-squares variant. |
-| `neumannProblemPredeterminedFeature_relu.ipynb` | Same weak Neumann form with **predetermined ReLU\(^k\)** features (structured / sphere init, redundant-neuron removal); general dimension. |
-| `neumannProblem_PINN.ipynb` | Strong-form **PINN / collocation** least squares with random ELM features (tanh or ReLU). Interior residual \(-\Delta u+u-f\); BCs enforced as **Dirichlet** collocation (despite the filename). |
-| `plot_data_compare_rand.ipynb` | Plots comparing random vs deterministic / non-random feature choices. |
-| `data/` | Saved H¹ error tensors and figures; `readDatah1-1d.ipynb`. |
-| `data-compare-rand/` | \(L^2\) / \(H^1\) errors and neuron lists for random vs non-random ELM (`.pt`). |
+Data: `results_relu_qmc_compare/`. To plot without rerunning:
 
-**How the three main solvers differ**
+```bash
+cd code/H1Fitting
+python plot_qmc_compare.py
+```
 
-| Notebook | Form | BC | Features |
-|----------|------|----|----------|
-| `neumanProblemVariational_RFM` | Weak \(H^1\) | Neumann \(g_N\) | Random tanh (ELM-style) |
-| `neumannProblemPredeterminedFeature_relu` | Weak \(H^1\) | Neumann \(g_N\) | Predetermined ReLU\(^k\) |
-| `neumannProblem_PINN` | Strong residual (PINN) | Dirichlet collocation | Random ELM (tanh / ReLU) |
+Rerunning the compare scripts writes `.npz` into `results_relu_qmc_compare/` (run them from `code/H1Fitting/`).
+
+### Tanh elliptic PDE, collocation, sphere scheme (§4.2)
+
+| File | Role |
+|------|------|
+| `tanh_ellipticProblem1d2d_sphere.py` | Elliptic PDE in 1D and 2D, collocation, sphere scheme |
+
+```bash
+cd code/H1Fitting
+python tanh_ellipticProblem1d2d_sphere.py
+python tanh_ellipticProblem1d2d_sphere.py --plot-only
+python tanh_ellipticProblem1d2d_sphere.py --dim 1
+```
+
+Related notebooks: `neumanProblemVariational_RFM.ipynb` (tanh variational Neumann / RFM), `tanh_ellipticProblem_collocation_sphere.ipynb`.
 
 ---
 
 ## `archived/`
 
-Older or unused notebooks and code kept for reference (e.g. Helmholtz, POU experiments, ABD tanh runs, `poisson_PINN`, local predetermined-feature copies, WIP RFM-2D, and `rfm_l2fitting_ly/`). Not part of the active experiment path above.
-
----
-
-## `0figure/` and `paper/`
-
-- **`0figure/`** — Selected figures (ReLU / tanh \(L^2\) plots, random vs deterministic PDE comparisons).
-- **`paper/`** — Reference literature (FBPINN, ELM–FBPINN, RFM conditioning, Petrushev 1998).
-
----
-
-## Common themes
-
-1. **Random feature / ELM models** — Inner weights fixed (random or predetermined); outer layer from linear LS or variational assembly.
-2. **Initialization** — Uniform, sphere, Petrushev, Gaussian (`utils_quad_init.py`).
-3. **Discretization** — Collocation, piecewise Gauss quadrature, Monte Carlo / Sobol, variational forms.
-4. **Metrics** — Relative \(L^2\) and \(H^1\) errors vs neuron count and scale \(R_m\).
-5. **Activations** — `tanh` and ReLU\(^k\) (\(k=1,2,3,\ldots\)).
-
----
-
-## Quick start
-
-Most work lives under `code/RFM_L2Fitting/` and `code/RFM_H1Fitting/`. Shared helpers:
-
-```python
-from utils_quad_init import model, model_tanh, initialize_w_b_sphere, PiecewiseGQ2D_weights_points
-```
-
-Run notebooks from their own directory (or put `code/` on `PYTHONPATH`) so relative data paths resolve.
+Older or unused notebooks (Helmholtz, POU, PINN copies, GPT least-squares demos, etc.). Not needed to reproduce the paper figures above.

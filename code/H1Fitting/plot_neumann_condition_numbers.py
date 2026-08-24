@@ -1,6 +1,6 @@
 """Plot Neumann H1 Galerkin condition number vs neuron count (L2-plot style).
 
-Reads condition_number_results/Neumann-problem-Predetermined-Feature-{d}d-relu{k}.npz.
+Reads condition_number_neumann/Neumann-problem-Predetermined-Feature-{d}d-relu{k}.npz.
 d=1,2: deterministic single trial; d>=3: mean over 5 random trials.
 Plots mean curve and log-log fit only (no ±std band).
 """
@@ -21,7 +21,7 @@ plt.rcParams.update({
     'lines.markersize': 7,
 })
 
-folder = Path('condition_number_results')
+folder = Path(__file__).resolve().parent / 'condition_number_neumann'
 relu_k = 3
 
 fig, axes = plt.subplots(2, 3, figsize=(12, 7), dpi=400)

@@ -1,7 +1,7 @@
 """Plot L2 Gram condition number vs kept neuron count.
 
 Produces one figure per ReLU power (relu1 and relu2).
-Reads condition_number_results/L2minimization-condition-{d}d-relu{k}.npz.
+Reads condition_number_relu/L2minimization-condition-{d}d-relu{k}.npz.
 Plots mean κ curve and log-log fit only (no ±std band).
 """
 from pathlib import Path
@@ -21,7 +21,7 @@ plt.rcParams.update({
     'lines.markersize': 7,
 })
 
-folder = Path('condition_number_results')
+folder = Path(__file__).resolve().parent / 'condition_number_relu'
 
 for relu_k in (1, 2):
     fig, axes = plt.subplots(2, 3, figsize=(12, 7), dpi=400)

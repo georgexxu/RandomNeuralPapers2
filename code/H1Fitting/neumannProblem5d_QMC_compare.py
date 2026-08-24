@@ -1,0 +1,927 @@
+"""
+Neumann problem on [-1,1]^d with predetermined ReLU^k features (weak / H1 form).
+
+PDE:  -div(α ∇u) + u = f, with Neumann boundary data g_N.
+Solve for outer coefficients by assembling the H1 variational least-squares
+system (mass + stiffness + Neumann boundary terms) via
+minimize_linear_layer_H1_explicit_assemble_efficient_general_dim.
+Inner weights are predetermined / structured (e.g. sphere sampling) with
+redundant-neuron removal; derivatives of ReLU^k features are coded explicitly.
+
+Contrast with neumann_problem_PINN.ipynb, which uses a strong-form PINN
+residual + Dirichlet collocation with random ELM features.
+
+Changelog:
+  - new function: minimize_linear_layer_H1_explicit_assemble_efficient_general_dim
+  - 2025 Mar 6th: general dimension d.
+  - 2025 Mar 12th: fixed Monte-Carlo domain scaling bug; code working.
+  - 2026 Aug 19: MC vs QMC comparison with seeded MC trials (mean±std) and Sobol n=2^k."""
+import torch
+import numpy as np
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import matplotlib.pyplot as plt
+import time
+import sys
+from scipy.sparse import linalg
+from pathlib import Path
+import itertools
+import sympy as sp
+import math  
+if torch.cuda.is_available():  
+    device = "cuda" 
+else:  
+    device = "cpu" 
+
+from scipy.stats import norm
+from sklearn.preprocessing import normalize
+from scipy.stats.qmc import Sobol
+
+torch.set_default_dtype(torch.float64)
+pi = torch.tensor(np.pi,dtype=torch.float64)
+ZERO = torch.tensor([0.]).to(device)
+class model(nn.Module):
+    """ ReLU k shallow neural network
+    Parameters: 
+    input size: input dimension
+    hidden_size1 : number of hidden layers 
+    num_classes: output classes 
+    k: degree of relu functions
+    """
+    def __init__(self, input_size, hidden_size1, num_classes,k = 1):
+        super().__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size1)
+        self.fc2 = nn.Linear(hidden_size1, num_classes,bias = False)
+        self.k = k 
+    def forward(self, x):
+        u1 = self.fc2(F.relu(self.fc1(x))**self.k)
+        return u1
+    def evaluate_derivative(self, x, i):
+        if self.k == 1:
+            u1 = self.fc2(torch.heaviside(self.fc1(x),ZERO) * self.fc1.weight.t()[i-1:i,:] )
+        else:
+            u1 = self.fc2(self.k*F.relu(self.fc1(x))**(self.k-1) *self.fc1.weight.t()[i-1:i,:] )  
+        return u1
+
+def plot_2D(f): 
+    
+    Nx = 400
+    Ny = 400 
+    xs = np.linspace(-1, 1, Nx)
+    ys = np.linspace(-1, 1, Ny)
+    x, y = np.meshgrid(xs, ys, indexing='xy')
+    xy_comb = np.stack((x.flatten(),y.flatten())).T
+    xy_comb = torch.tensor(xy_comb)
+    z = f(xy_comb).reshape(Nx,Ny)
+    z = z.detach().numpy()
+    plt.figure(dpi=200)
+    ax = plt.axes(projection='3d')
+    ax.plot_surface(x , y , z )
+
+    plt.show()
+
+def plot_subdomains(my_model):
+    x_coord =torch.linspace(0,1,200)
+    wi = my_model.fc1.weight.data
+    bi = my_model.fc1.bias.data 
+    for i, bias in enumerate(bi):  
+        if wi[i,1] !=0: 
+            plt.plot(x_coord, - wi[i,0]/wi[i,1]*x_coord - bias/wi[i,1])
+        else: 
+            plt.plot(x_coord,  - bias/wi[i,0]*torch.ones(x_coord.size()))
+
+    plt.xlim([0,1])
+    plt.ylim([0,1])
+    plt.legend()
+    plt.show()
+    return 0   
+
+## Initialization
+def adjust_neuron_position(my_model,target=None):
+    counter = 0 
+    # positions = torch.tensor([[0.,0.],[0.,1.],[1.,1.],[1.,0.]])
+    positions = torch.tensor([[-1.,-1.],[-1.,1.],[1.,1.],[1.,-1.]])
+    neuron_num = my_model.fc1.bias.size(0)
+    for i in range(neuron_num): 
+        w = my_model.fc1.weight.data[i:i+1,:]
+        b = my_model.fc1.bias.data[i]
+        values = torch.matmul(positions,w.T) # + b
+        left_end = - torch.max(values)
+        right_end = - torch.min(values) 
+        off_set = (right_end - left_end)/1000 
+        if b <= left_end + off_set: # nearly vanishing
+            b = torch.rand(1)*(right_end - left_end - off_set*2) + left_end + off_set 
+            my_model.fc1.bias.data[i] = b 
+        if b >= right_end - off_set: # nearly nonvanishing everywhere
+            if counter < 3:
+                counter += 1
+            else: # 3 or more 
+                b = torch.rand(1)*(right_end - left_end - off_set*2) + left_end + off_set
+                my_model.fc1.bias.data[i] = b 
+    return my_model
+
+def PiecewiseGQ2D_weights_points(Nx, order,bl = [-1,-1],ur = [1,1]): 
+    """ A slight modification of PiecewiseGQ2D function that only needs the weights and integration points.
+    Parameters
+    Allows a symmetric square domain (around 0) with lower left corner at bl and upper right corner at ur 
+    ----------
+    Nx: int 
+        number of intervals along the dimension. No Ny, assume Nx = Ny
+    order: int 
+        order of the Gauss Quadrature
+    Returns
+    -------
+    long_weights: torch.tensor
+    integration_points: torch.tensor
+    """
+#     print("order: ",order )
+    x, w = np.polynomial.legendre.leggauss(order)
+    gauss_pts = np.array(np.meshgrid(x,x,indexing='ij')).reshape(2,-1).T
+    weights =  (w*w[:,None]).ravel()
+
+    gauss_pts =torch.tensor(gauss_pts)
+    weights = torch.tensor(weights)
+
+    h = (ur[0]- bl[0])/Nx # 100 intervals 
+    long_weights =  torch.tile(weights,(Nx**2,1))
+    long_weights = long_weights.reshape(-1,1)
+    long_weights = long_weights * h**2 /4 
+
+    integration_points = torch.tile(gauss_pts,(Nx**2,1))
+    scale_factor = h/2 
+    integration_points = scale_factor * integration_points
+
+    index = np.arange(0,Nx)  
+    ordered_pairs = np.array(np.meshgrid(index,index,indexing='ij'))
+    ordered_pairs = ordered_pairs.reshape(2,-1).T
+
+    # print(ordered_pairs)
+    # print()
+    ordered_pairs = torch.tensor(ordered_pairs)
+    # print(ordered_pairs.size())
+    ordered_pairs = torch.tile(ordered_pairs, (1,order**2)) # number of GQ points
+    # print(ordered_pairs)
+
+    ordered_pairs =  ordered_pairs.reshape(-1,2)
+    # print(ordered_pairs)
+    translation = ordered_pairs*h + (torch.tensor(bl) + h/2) 
+    # print(translation)
+
+    integration_points = integration_points + translation 
+#     print(integration_points.size())
+    # func_values = integrand2_torch(integration_points)
+    return long_weights.to(device), integration_points.to(device)
+
+
+def PiecewiseGQ3D_weights_points(Nx, order,bl = [-1,-1,-1],ur = [1,1,1]): 
+    """ A slight modification of PiecewiseGQ2D function that only needs the weights and integration points.
+    Parameters
+    ----------
+
+    Nx: int 
+        number of intervals along the dimension. No Ny, assume Nx = Ny
+    order: int 
+        order of the Gauss Quadrature
+
+    Returns
+    -------
+    long_weights: torch.tensor
+    integration_points: torch.tensor
+    """
+
+    """
+    Parameters
+    ----------
+    target : 
+        Target function 
+    Nx: int 
+        number of intervals along the dimension. No Ny, assume Nx = Ny
+    order: int 
+        order of the Gauss Quadrature
+    """
+
+    # print("order: ",order )
+    x, w = np.polynomial.legendre.leggauss(order)
+    gauss_pts = np.array(np.meshgrid(x,x,x,indexing='ij')).reshape(3,-1).T
+    weight_list = np.array(np.meshgrid(w,w,w,indexing='ij'))
+    weights =   (weight_list[0]*weight_list[1]*weight_list[2]).ravel() 
+
+    gauss_pts =torch.tensor(gauss_pts)
+    weights = torch.tensor(weights)
+
+    # h = 1/Nx # 100 intervals 
+    h = (ur[0]- bl[0])/Nx # 100 intervals 
+    long_weights =  torch.tile(weights,(Nx**3,1))
+    long_weights = long_weights.reshape(-1,1)
+    long_weights = long_weights * h**3 /8 
+
+    integration_points = torch.tile(gauss_pts,(Nx**3,1))
+    # print("shape of integration_points", integration_points.size())
+    scale_factor = h/2 
+    integration_points = scale_factor * integration_points
+
+    # index = np.arange(1,Nx+1)-0.5
+    index = np.arange(0,Nx)  
+    ordered_pairs = np.array(np.meshgrid(index,index,index,indexing='ij'))
+    ordered_pairs = ordered_pairs.reshape(3,-1).T
+
+    # print(ordered_pairs)
+    # print()
+    ordered_pairs = torch.tensor(ordered_pairs)
+    # print(ordered_pairs.size())
+    ordered_pairs = torch.tile(ordered_pairs, (1,order**3)) # number of GQ points
+    # print(ordered_pairs)
+
+    ordered_pairs =  ordered_pairs.reshape(-1,3)
+    # print(ordered_pairs)
+    # translation = ordered_pairs*h 
+    translation = ordered_pairs*h + (torch.tensor(bl) + h/2) 
+    # print(translation)
+
+    integration_points = integration_points + translation 
+
+    return long_weights.to(device), integration_points.to(device)
+
+def MonteCarlo_Sobol_dDim_weights_points(M ,d = 4,bl = -1,ur = 1):
+    
+    length = ur - bl
+    vol = length ** d 
+    Sob_integral = torch.quasirandom.SobolEngine(dimension =d, scramble= False, seed=None) 
+    integration_points = Sob_integral.draw(M).double() 
+    integration_points = integration_points.to(device) * length - length/2 
+    weights = torch.ones(M,1).to(device)/M * vol 
+    return weights.to(device), integration_points.to(device) 
+
+
+def minimize_linear_layer_H1_explicit_assemble_efficient_general_dim(model,target, g_N, weights, integration_points, w_bd, pts_bd, activation = 'relu',solver="direct",memory = 2**29, on_singular="raise"):
+    """ -div alpha grad u(x) + u = f 
+    Parameters
+    ----------
+    model: 
+        nn model
+    alpha:
+        alpha function
+    target:
+        rhs function f 
+    pts_bd:
+        integration points on the boundary, embdedded in the domain 
+    """ 
+    zero = torch.tensor([0.]).to(device)
+    start_time = time.time() 
+    w = model.fc1.weight.data 
+    b = model.fc1.bias.data 
+    neuron_num = b.size(0) 
+    dim = integration_points.size(1) 
+    M = integration_points.size(0)
+
+    total_size = neuron_num * M # memory, number of floating numbers 
+    print('total size: {} {} = {}'.format(neuron_num,M,total_size))
+    num_batch = total_size//memory + 1 # divide according to memory
+    print("num batches: ",num_batch)
+    batch_size = M//num_batch
+    start_ind = 0
+    end_ind = 0 
+    jac = torch.zeros(b.size(0),b.size(0)).to(device)
+    rhs = torch.zeros(b.size(0),1).to(device)
+
+    for j in range(0,M,batch_size): # batch operation in data points 
+        end_ind = j + batch_size
+        basis_value_col = F.relu(integration_points[j:end_ind] @ w.t()+ b)**(model.k) 
+        weighted_basis_value_col = basis_value_col * weights[j:end_ind] 
+        jac += weighted_basis_value_col.t() @ basis_value_col 
+        rhs += weighted_basis_value_col.t() @ (target(integration_points[j:end_ind,:])) 
+
+    # Assemble the boundary condition term <g,v>_{\Gamma_N} 
+    size_pts_bd = int(pts_bd.size(0)/(2*dim))
+    # M_bc = size_pts_bd 
+    # total_size = M_bc * neuron_num 
+    # num_batch = total_size//memory + 1 
+    # batch_size = M_bc//num_batch
+    if g_N != None:
+        bcs_N = g_N(dim)
+        for ii, g_ii in bcs_N:
+            weighted_g_N = -g_ii(pts_bd[2*ii*size_pts_bd:(2*ii+1)*size_pts_bd,:])* w_bd[2*ii*size_pts_bd:(2*ii+1)*size_pts_bd,:]
+            basis_value_bd_col = F.relu(pts_bd[2*ii*size_pts_bd:(2*ii+1)*size_pts_bd,:] @ w.t()+ b)**(model.k)
+            rhs += basis_value_bd_col.t() @ weighted_g_N
+
+            weighted_g_N = g_ii(pts_bd[(2*ii+1)*size_pts_bd:(2*ii+2)*size_pts_bd,:])* w_bd[(2*ii+1)*size_pts_bd:(2*ii+2)*size_pts_bd,:]
+            basis_value_bd_col = F.relu(pts_bd[(2*ii+1)*size_pts_bd:(2*ii+2)*size_pts_bd,:] @ w.t()+ b)**(model.k)
+            rhs += basis_value_bd_col.t() @ weighted_g_N
+            
+    # Stiffness matrix term in the jacobian 
+    for d in range(dim):
+        end_ind = 0 
+        if model.k == 1:  
+            for j in range(0,M,batch_size): 
+                end_ind = j + batch_size 
+                basis_value_dxi_col = torch.heaviside(integration_points[j:end_ind] @ w.t()+ b, zero) * w.t()[d:d+1,:]
+                weighted_basis_value_dx_col = basis_value_dxi_col * weights[j:end_ind] 
+                jac += weighted_basis_value_dx_col.t() @ basis_value_dxi_col 
+#             basis_value_dxi_col = torch.heaviside(integration_points @ w.t()+ b, zero) * w.t()[d:d+1,:]
+#             weighted_basis_value_dx_col = basis_value_dxi_col * weights * coef_alpha 
+#             jac += weighted_basis_value_dx_col.t() @ basis_value_dxi_col 
+
+        else: 
+            for j in range(0,M,batch_size):  
+                end_ind = j + batch_size 
+                basis_value_dxi_col = model.k * F.relu(integration_points[j:end_ind] @ w.t()+ b)**(model.k-1) * w.t()[d:d+1,:]
+                weighted_basis_value_dx_col = basis_value_dxi_col * weights[j:end_ind]  
+                jac += weighted_basis_value_dx_col.t() @ basis_value_dxi_col 
+#             basis_value_dxi_col = model.k * F.relu(integration_points @ w.t()+ b)**(model.k-1) * w.t()[d:d+1,:]
+#             weighted_basis_value_dx_col = basis_value_dxi_col * weights * coef_alpha  
+#             jac += weighted_basis_value_dx_col.t() @ basis_value_dxi_col 
+
+    print("assembling the mass matrix time taken: ", time.time()-start_time) 
+
+    start_time = time.time()    
+    if solver == "cg": 
+        sol, exit_code = linalg.cg(np.array(jac.detach().cpu()),np.array(rhs.detach().cpu()),tol=1e-12)
+        sol = torch.tensor(sol).view(1,-1)
+    elif solver == "direct": 
+#         sol = np.linalg.inv( np.array(jac.detach().cpu()) )@np.array(rhs.detach().cpu())
+        try:
+            sol = (torch.linalg.solve( jac.detach(), rhs.detach())).view(1,-1)
+        except RuntimeError as e:
+            if on_singular == "lstsq":
+                print("direct solve failed ({}); falling back to lstsq".format(e))
+                sol = (torch.linalg.lstsq(jac.detach().cpu(),rhs.detach().cpu(),driver='gelsd').solution).view(1,-1)
+            else:
+                raise
+    elif solver == "ls":
+        sol = (torch.linalg.lstsq(jac.detach().cpu(),rhs.detach().cpu(),driver='gelsd').solution).view(1,-1)
+        # sol = (torch.linalg.lstsq(jac.detach(),rhs.detach()).solution).view(1,-1) # gpu/cpu, driver = 'gels', cannot solve singular
+    print("solving Ax = b time taken: ", time.time()-start_time)
+    return sol 
+
+def minimize_linear_layer_H1_explicit_assemble_efficient(model,target,weights, integration_points,activation = 'relu',solver="direct" ):
+
+    # weights, integration_points = PiecewiseGQ2D_weights_points(Nx, order) 
+    # integration_points.requires_grad_(True) 
+    start_time = time.time() 
+    w = model.fc1.weight.data 
+    b = model.fc1.bias.data 
+    neuron_num = b.size(0) 
+
+    if activation == 'relu':
+        basis_value_col = F.relu(integration_points @ w.t()+ b)**(model.k) 
+        if model.k == 1:  
+            basis_value_dx_col = torch.heaviside(integration_points @ w.t()+ b, torch.tensor([0.])) * w.t()[0:1,:] 
+            basis_value_dy_col = torch.heaviside(integration_points @ w.t()+ b,torch.tensor([0.])) * w.t()[1:2,:] 
+        else: 
+            basis_value_dx_col = model.k * F.relu(integration_points @ w.t()+ b)**(model.k-1) * w.t()[0:1,:]
+            basis_value_dy_col = model.k * F.relu(integration_points @ w.t()+ b)**(model.k-1) * w.t()[1:2,:] 
+    # elif activation == 'tanh': 
+    #     basis_value_col = torch.tanh(integration_points @ w.t()+ b) 
+    #     basis_value_dx_col = tanh_activation_dx(integration_points @ w.t()+ b) * w.t()[0:1,:]
+    #     basis_value_dy_col = tanh_activation_dx(integration_points @ w.t()+ b) * w.t()[1:2,:]
+    # elif activation == 'gaussian':
+    #     basis_value_col = Gaussian_activation(integration_points @ w.t()+ b)
+    #     basis_value_dx_col = Gaussian_activation_dx(integration_points @ w.t()+ b) * w.t()[0:1,:]
+    #     basis_value_dy_col = Gaussian_activation_dx(integration_points @ w.t()+ b) * w.t()[1:2,:]
+    # elif activation == 'cosine':
+    #     basis_value_col = cosine_activation(integration_points @ w.t()+ b) 
+    #     basis_value_dx_col = cosine_activation_dx(integration_points @ w.t()+ b) * w.t()[0:1,:]
+    #     basis_value_dy_col = cosine_activation_dx(integration_points @ w.t()+ b) * w.t()[1:2,:] 
+
+    weighted_basis_value_col = basis_value_col * weights 
+    jac1 = weighted_basis_value_col.t() @ basis_value_col  # mass matrix 
+    rhs = weighted_basis_value_col.t() @ (target(integration_points)) 
+    print("assembling the mass matrix time taken: ", time.time()-start_time) 
+
+    start_time = time.time() 
+    weighted_basis_value_dx_col = basis_value_dx_col * weights
+    weighted_basis_value_dy_col = basis_value_dy_col * weights
+    jac2 = weighted_basis_value_dx_col.t() @ basis_value_dx_col + weighted_basis_value_dy_col.t() @ basis_value_dy_col 
+    print("assembling the stiffness matrix time taken: ", time.time()-start_time)   
+    jac = jac1 + jac2    
+    
+    start_time = time.time()    
+    if solver == "cg": 
+        sol, exit_code = linalg.cg(np.array(jac.detach().cpu()),np.array(rhs.detach().cpu()),tol=1e-12)
+        sol = torch.tensor(sol).view(1,-1)
+    elif solver == "direct": 
+#         sol = np.linalg.inv( np.array(jac.detach().cpu()) )@np.array(rhs.detach().cpu())
+        sol = (torch.linalg.solve( jac.detach(), rhs.detach())).view(1,-1)
+    elif solver == "ls":
+        sol = (torch.linalg.lstsq(jac.detach().cpu(),rhs.detach().cpu(),driver='gelsd').solution).view(1,-1)
+        # sol = (torch.linalg.lstsq(jac.detach(),rhs.detach()).solution).view(1,-1) # gpu/cpu, driver = 'gels', cannot solve singular
+    print("solving Ax = b time taken: ", time.time()-start_time)
+    return sol 
+
+def show_convergence_order(err_l2,err_h10,exponent,dict_size, filename,write2file = False):
+    
+    if write2file:
+        file_mode = "a" if os.path.exists(filename) else "w"
+        f_write = open(filename, file_mode)
+    
+    neuron_nums = [2**j for j in range(2,exponent+1)]
+    err_list = [err_l2[i] for i in neuron_nums ]
+    err_list2 = [err_h10[i] for i in neuron_nums ] 
+    # f_write.write('M:{}, relu {} \n'.format(M,k))
+    if write2file:
+        f_write.write('dictionary size: {}\n'.format(dict_size))
+        f_write.write("neuron num \t\t error \t\t order \t\t h10 error \\ order \n")
+    print("neuron num \t\t error \t\t order")
+    for i, item in enumerate(err_list):
+        if i == 0: 
+            # print(neuron_nums[i], end = "\t\t")
+            # print(item, end = "\t\t")
+            
+            # print("*")
+            print("{} \t\t {:.6f} \t\t * \t\t {:.6f} \t\t * \n".format(neuron_nums[i],item, err_list2[i] ) )
+            if write2file: 
+                f_write.write("{} \t\t {} \t\t * \t\t {} \t\t * \n".format(neuron_nums[i],item, err_list2[i] ))
+        else: 
+            # print(neuron_nums[i], end = "\t\t")
+            # print(item, end = "\t\t") 
+            # print(np.log(err_list[i-1]/err_list[i])/np.log(2))
+            print("{} \t\t {:.6f} \t\t {:.6f} \t\t {:.6f} \t\t {:.6f} \n".format(neuron_nums[i],item,np.log(err_list[i-1]/err_list[i])/np.log(2),err_list2[i] , np.log(err_list2[i-1]/err_list2[i])/np.log(2) ) )
+            if write2file: 
+                f_write.write("{} \t\t {} \t\t {} \t\t {} \t\t {} \n".format(neuron_nums[i],item,np.log(err_list[i-1]/err_list[i])/np.log(2),err_list2[i] , np.log(err_list2[i-1]/err_list2[i])/np.log(2) ))
+    if write2file:     
+        f_write.write("\n")
+        f_write.close()
+
+def show_convergence_order_latex(err_l2,err_h10,exponent): 
+    neuron_nums = [2**j for j in range(2,exponent+1)]
+    err_list = [err_l2[i] for i in neuron_nums ]
+    err_list2 = [err_h10[i] for i in neuron_nums ] 
+    print("neuron num  & \t $\|u-u_n \|_{L^2}$ & \t order & \t $ | u -u_n |_{H^1}$ & \t order \\\ \hline \hline ")
+    for i, item in enumerate(err_list):
+        if i == 0: 
+            print("{} \t\t & {:.6f} &\t\t * & \t\t {:.6f} & \t\t *  \\\ \hline  \n".format(neuron_nums[i],item, err_list2[i] ) )   
+        else: 
+            print("{} \t\t &  {:.3e} &  \t\t {:.2f} &  \t\t {:.3e} &  \t\t {:.2f} \\\ \hline  \n".format(neuron_nums[i],item,np.log(err_list[i-1]/err_list[i])/np.log(2),err_list2[i] , np.log(err_list2[i-1]/err_list2[i])/np.log(2) ) )
+
+## helper functions 
+
+# show convergence order 
+def output_convergence_order(neuron_nums,err_list_l2, err_list_h2): 
+    print("$n$ & \t $\|u-u_n \|_{L^2}$ & \t order  & $ |u-u_n |_{H^1}$ & 	 order\\\ \hline \hline ")
+    for i, item in enumerate(err_list_l2):
+        if i == 0: 
+            print("{} \t\t & {:.3e} &\t\t * & {:.3e} &  *  \\\ \hline  \n".format(neuron_nums[i],item, err_list_h2[i]) )   
+        else: 
+            print("{} \t\t &  {:.3e} &  \t\t {:.2f}  &  {:.3e} &  {:.2f}  \\\ \hline  \n".format(neuron_nums[i],item, np.log(err_list_l2[i-1]/err_list_l2[i])/np.log(neuron_nums[i]/neuron_nums[i-1]), err_list_h2[i], np.log(err_list_h2[i-1]/err_list_h2[i])/np.log(neuron_nums[i]/neuron_nums[i-1]) ) )
+
+
+def compute_l2_error(u_exact,my_model,M,batch_size_2,weights,integration_points): 
+    err = 0 
+    if my_model == None: 
+        for jj in range(0,M,batch_size_2): 
+            end_index = jj + batch_size_2 
+            func_values = u_exact(integration_points[jj:end_index,:])
+            err += torch.sum(func_values**2 * weights[jj:end_index,:])
+    else: 
+        for jj in range(0,M,batch_size_2): 
+            end_index = jj + batch_size_2 
+            func_values = u_exact(integration_points[jj:end_index,:]) - my_model(integration_points[jj:end_index,:]).detach()
+            err += torch.sum(func_values**2 * weights[jj:end_index,:])
+    return err**0.5 
+
+def compute_gradient_error(u_exact_grad,my_model,M,batch_size_2,weights,integration_points):
+    """
+    Parameters
+    ----------
+    u_exact_grad: list or None
+        a list that contains ways of evaluating partial derivatives that gives the gradient  
+    """
+    err_h10 = 0 
+     # initial gradient error 
+    if u_exact_grad != None and my_model!=None:
+        u_grad = u_exact_grad() 
+        for ii, grad_i in enumerate(u_grad): 
+            for jj in range(0,M,batch_size_2): 
+                end_index = jj + batch_size_2 
+                my_model_dxi = my_model.evaluate_derivative(integration_points[jj:end_index,:],ii+1).detach() 
+                err_h10 += torch.sum((grad_i(integration_points[jj:end_index,:]) - my_model_dxi)**2 * weights[jj:end_index,:])
+    elif u_exact_grad != None and my_model==None:
+        u_grad = u_exact_grad() 
+        for grad_i in u_grad: 
+            for jj in range(0,M,batch_size_2): 
+                end_index = jj + batch_size_2 
+                err_h10 += torch.sum((grad_i(integration_points[jj:end_index,:]))**2 * weights[jj:end_index,:])
+    return err_h10**0.5
+
+def initialize_model_1(my_model):
+    # w ~ U(S^1), b ~ U(-1.42,1.42) 
+    neuron_nums = my_model.fc1.bias.size(0)
+    samples = torch.rand(neuron_nums,2) 
+    T =torch.tensor([[2*pi,0],[0,2.84]])
+    shift = torch.tensor([0,-1.42]) 
+    samples = samples@T + shift 
+    theta = samples[:,0].reshape(neuron_nums,1)
+    W1 = torch.cos(theta)
+    W2 = torch.sin(theta)
+    W = torch.cat((W1,W2),1) # N1 x 2
+    b = samples[:,1].reshape(neuron_nums,1)
+    my_model.fc1.weight.data[:,:] = W[:,:]
+    my_model.fc1.bias.data[:] = b[:,0] 
+    
+    return my_model 
+
+def initialize_model_2(my_model,dim = 2):
+    # (w,b) ~ U(S^2)
+    neuron_nums = my_model.fc1.bias.size(0)
+    points = torch.randn(neuron_nums,dim + 1)
+    points = points/torch.norm(points, dim=1, keepdim=True)
+    my_model.fc1.weight.data[:,:] = points[:,0:dim]
+    my_model.fc1.bias.data[:] = points[:,dim]  
+    return my_model 
+
+
+def initialize_model_2_qmc(my_model,dim = 2):
+    # (w,b) ~ U(S^{dim}) via Sobol + inverse-normal CDF + projection onto the sphere.
+    # Draw n = 2^k points so Sobol (t,m,s)-net balance properties are preserved.
+    neuron_nums = my_model.fc1.bias.size(0)
+    if neuron_nums <= 0 or (neuron_nums & (neuron_nums - 1)) != 0:
+        raise ValueError(
+            f"Sobol balance properties require n to be a power of 2, got n={neuron_nums}"
+        )
+    sobol_engine = Sobol(dim+1,scramble=False)
+    u = sobol_engine.random(n=neuron_nums)    
+    # points = torch.randn(neuron_nums,dim + 1)
+    epsilon = np.finfo(float).eps
+    u = np.clip(u, epsilon, 1 - epsilon)
+
+    # Inverse CDF to get standard normal points
+    z = norm.ppf(u)
+
+    # Normalize to project onto sphere
+    x = normalize(z, axis=1)
+    # Convert to torch tensor
+    points = torch.tensor(x, dtype=torch.float64)
+    points = points/torch.norm(points, dim=1, keepdim=True)
+    my_model.fc1.weight.data[:,:] = points[:,0:dim]
+    my_model.fc1.bias.data[:] = points[:,dim]  
+    return my_model 
+
+def initialize_model_3(my_model):
+    # generate a uniform grid on S^2 
+    neuron_nums = my_model.fc1.bias.size(0) 
+
+    indices = torch.arange(0, neuron_nums, dtype=torch.float) + 0.5
+    phi = torch.acos(1 - 2*indices/neuron_nums)
+    theta = pi * (1 + 5**0.5) * indices
+    x = torch.sin(phi) * torch.cos(theta)
+    y = torch.sin(phi) * torch.sin(theta)
+    z = torch.cos(phi)
+
+    points = torch.stack((x, y, z), dim=1)
+    my_model.fc1.weight.data[:,:] = points[:,0:2]
+    my_model.fc1.bias.data[:] = points[:,2]
+    return my_model 
+
+def remove_redundant_neuron(my_model, dims = 3, choice = 2): 
+    ##  choice 1:  [0,1]^d, choice 2: [-1,1]^d
+    def create_mesh_grid(dims, pts):
+        mesh = torch.tensor(list(itertools.product(pts,repeat=dims)))
+        vertices = mesh.reshape(len(pts) ** dims, -1) 
+        return vertices
+    counter = 0 
+    # positions = torch.tensor([[0.,0.],[0.,1.],[1.,1.],[1.,0.]])
+    # pts = torch.tensor([0.,1.]) # for domain [0,1]^d 
+    if choice == 1: 
+        pts = torch.tensor([0.,1.])
+    elif choice == 2:
+        pts = torch.tensor([-1.,1.])# for domain [-1,1]^d 
+    elif choice == 3:
+        pts = torch.tensor([-1./2,1./2])# for domain [-1,1]^d 
+    positions = create_mesh_grid(dims,pts) 
+    neuron_num = my_model.fc1.bias.size(0)
+    relu_k = my_model.k 
+    recorded_neurons = []
+    poly_dofs = math.comb(relu_k + dims, dims)
+    for i in range(neuron_num): 
+        w = my_model.fc1.weight.data[i:i+1,:]
+        b = my_model.fc1.bias.data[i]
+        values = torch.matmul(positions,w.T)
+        left_end = - torch.max(values)
+        right_end = - torch.min(values)
+        offset = (right_end - left_end)/50
+        if b > left_end + offset/2 and b < right_end - offset/2: 
+            recorded_neurons.append((w, b))
+        elif b >= right_end - offset/2 and counter < poly_dofs:
+            recorded_neurons.append((w, b))
+            counter += 1
+
+    new_neuron_num = len(recorded_neurons)
+    new_model = model(dims, new_neuron_num, 1, k=relu_k).to(device)
+    for i, (w, b) in enumerate(recorded_neurons):
+        new_model.fc1.weight.data[i:i+1,:] = w
+        new_model.fc1.bias.data[i] = b
+    print("Number of neurons removed: ", neuron_num - new_neuron_num)
+    print("Number of neurons left: ", new_neuron_num)  
+    return new_model
+
+
+def u_exact(x):
+    z = torch.prod(torch.sin(pi/2 * x),dim = 1,keepdim = True)
+    return z 
+
+def u_1(x):
+    sin_terms = torch.sin(pi/2 * x)
+    cos_term = torch.cos(pi/2 * x[:, 0:1])
+    sin_terms[:, 0:1] = cos_term  # Replace the first sine term with the cosine term
+    z = (pi/2) * torch.prod(sin_terms, dim=1, keepdim=True)
+    return z 
+
+def u_2(x):
+    sin_terms = torch.sin(pi/2 * x)
+    cos_term = torch.cos(pi/2 * x[:, 1:2])
+    sin_terms[:, 1:2] = cos_term  # Replace the second sine term with the cosine term
+    z = (pi/2) * torch.prod(sin_terms, dim=1, keepdim=True)
+    return z
+
+def u_3(x):
+    sin_terms = torch.sin(pi/2 * x)
+    cos_term = torch.cos(pi/2 * x[:, 2:3])
+    sin_terms[:, 2:3] = cos_term  # Replace the third sine term with the cosine term
+    z = (pi/2) * torch.prod(sin_terms, dim=1, keepdim=True)
+    return z
+
+def u_4(x):
+    sin_terms = torch.sin(pi/2 * x)
+    cos_term = torch.cos(pi/2 * x[:, 3:4])
+    sin_terms[:, 3:4] = cos_term  # Replace the fourth sine term with the cosine term
+    z = (pi/2) * torch.prod(sin_terms, dim=1, keepdim=True)
+    return z
+
+def u_5(x):
+    sin_terms = torch.sin(pi/2 * x)
+    cos_term = torch.cos(pi/2 * x[:, 4:5])
+    sin_terms[:, 4:5] = cos_term  # Replace the fifth sine term with the cosine term
+    z = (pi/2) * torch.prod(sin_terms, dim=1, keepdim=True)
+    return z
+
+def target(x):
+    z = (5 * (pi/2)**2 + 1)*torch.prod(torch.sin(pi/2 * x),dim = 1,keepdim = True) 
+    return z
+
+def u_exact_grad():
+    return [u_1, u_2,u_3,u_4,u_5]
+
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def evaluate_model_errors(my_model, M, integration_weights, integration_points):
+    memory = 2**28
+    num_neuron = 0 if my_model is None else int(my_model.fc1.bias.detach().data.size(0))
+    total_size2 = M * (num_neuron + 1)
+    num_batch2 = total_size2 // memory + 1
+    batch_size_2 = M // num_batch2
+    errl2 = compute_l2_error(u_exact, my_model, M, batch_size_2, integration_weights, integration_points)
+    errh1 = compute_gradient_error(u_exact_grad, my_model, M, batch_size_2, integration_weights, integration_points)
+    return errl2.item(), errh1.item()
+
+
+def fit_one_model(neuron_num, relu_k, dim, init_fn, integration_weights, integration_points,
+                  assemble_memory=2**27, on_singular="raise"):
+    my_model = model(dim, neuron_num, 1, relu_k).to(device)
+    my_model = init_fn(my_model, dim=dim).to(device)
+    my_model = remove_redundant_neuron(my_model.cpu(), dims=dim, choice=2).to(device)
+    sol = minimize_linear_layer_H1_explicit_assemble_efficient_general_dim(
+        my_model, target, None, integration_weights, integration_points,
+        torch.tensor([]), torch.tensor([]), activation='relu', solver='direct',
+        memory=assemble_memory, on_singular=on_singular)
+    my_model.fc2.weight.data[0, :] = sol[:]
+    n_kept = int(my_model.fc1.bias.size(0))
+    errl2, errh1 = evaluate_model_errors(
+        my_model, integration_points.size(0), integration_weights, integration_points)
+    return n_kept, errl2, errh1
+
+
+def consume_init_rng(neuron_num, relu_k, dim, init_fn):
+    """Advance RNG the same way fit_one_model does before the linear solve."""
+    my_model = model(dim, neuron_num, 1, relu_k).to(device)
+    init_fn(my_model, dim=dim)
+
+
+def save_partial(path, **arrays):
+    np.savez(path, **arrays)
+
+def empirical_orders(n_list, err_list):
+    orders = [float('nan')]
+    for i in range(1, len(n_list)):
+        orders.append(np.log(err_list[i - 1] / err_list[i]) / np.log(n_list[i] / n_list[i - 1]))
+    return orders
+
+
+def theory_exponent_l2(k, d):
+    return -0.5 - (2 * k + 1) / (2 * d)
+
+
+def theory_exponent_h1(k, d):
+    return -0.5 - (2 * k - 1) / (2 * d)
+
+def format_compare_table(n_list, mc_l2_mean, mc_l2_std, mc_h1_mean, mc_h1_std,
+                         qmc_l2, qmc_h1, mc_n_kept_mean, mc_n_kept_std, qmc_n_kept):
+    # Orders vs actual (kept) neuron counts, matching the old actual_neuron_list.
+    l2_ord_mc = empirical_orders(mc_n_kept_mean, mc_l2_mean)
+    h1_ord_mc = empirical_orders(mc_n_kept_mean, mc_h1_mean)
+    l2_ord_qmc = empirical_orders(qmc_n_kept, qmc_l2)
+    h1_ord_qmc = empirical_orders(qmc_n_kept, qmc_h1)
+    lines = []
+    header = (
+        "n_req & MC n_actual mean±std & QMC n_actual & MC L2 mean ± std & QMC L2 & "
+        "MC H1 mean ± std & QMC H1 & MC L2 ord & QMC L2 ord & MC H1 ord & QMC H1 ord"
+    )
+    lines.append(header)
+    for i, n in enumerate(n_list):
+        l2_mc_o = "*" if i == 0 else f"{l2_ord_mc[i]:.2f}"
+        h1_mc_o = "*" if i == 0 else f"{h1_ord_mc[i]:.2f}"
+        l2_q_o = "*" if i == 0 else f"{l2_ord_qmc[i]:.2f}"
+        h1_q_o = "*" if i == 0 else f"{h1_ord_qmc[i]:.2f}"
+        lines.append(
+            f"{n} & {mc_n_kept_mean[i]:.1f} ± {mc_n_kept_std[i]:.1f} & {int(qmc_n_kept[i])} & "
+            f"{mc_l2_mean[i]:.3e} ± {mc_l2_std[i]:.3e} & {qmc_l2[i]:.3e} & "
+            f"{mc_h1_mean[i]:.3e} ± {mc_h1_std[i]:.3e} & {qmc_h1[i]:.3e} & "
+            f"{l2_mc_o} & {l2_q_o} & {h1_mc_o} & {h1_q_o}"
+        )
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    dim = 5
+    relu_k = 3
+    M = int(6e6)
+    # Powers of 2 so Sobol draws preserve balance properties (before neuron pruning).
+    neuron_num_list = [2**k for k in range(6, 12)]  # 64, 128, 256, 512, 1024, 2048
+    n_sizes = len(neuron_num_list)
+    n_trials = 5
+    max_seed = 50
+    integration_weights, integration_points = MonteCarlo_Sobol_dDim_weights_points(M, dim, -1, 1)
+
+    print("device:", device)
+    print("quadrature M:", M, "(Sobol volume points in 5D)")
+    print("neuron_num_list (power of 2):", neuron_num_list)
+    print("MC: {} successful trials; skip a seed if the H1 matrix is singular".format(n_trials))
+    print("L2 theory exponent:", theory_exponent_l2(relu_k, dim))
+    print("H1 theory exponent:", theory_exponent_h1(relu_k, dim))
+    mc_l2 = np.zeros((n_trials, n_sizes))
+    mc_h1 = np.zeros((n_trials, n_sizes))
+    mc_n_kept = np.zeros((n_trials, n_sizes))
+    mc_seeds_used = np.full(n_trials, -1, dtype=int)
+    n_ok = 0
+    next_seed = 0
+    failed_seeds = []
+    qmc_l2 = np.zeros(n_sizes)
+    qmc_h1 = np.zeros(n_sizes)
+    qmc_n_kept = np.zeros(n_sizes, dtype=int)
+    qmc_done = np.zeros(n_sizes, dtype=bool)
+
+    out_dir = Path("results_relu_qmc_compare")
+    out_dir.mkdir(exist_ok=True)
+    partial_path = out_dir / "mqc_compare_trials_5d_partial.npz"
+
+    def dump_partial():
+        save_partial(
+            partial_path,
+            mc_l2=mc_l2, mc_h1=mc_h1, mc_n_kept=mc_n_kept,
+            mc_seeds_used=mc_seeds_used, n_ok=np.array(n_ok),
+            next_seed=np.array(next_seed),
+            failed_seeds=np.array(failed_seeds, dtype=int),
+            qmc_l2=qmc_l2, qmc_h1=qmc_h1, qmc_n_kept=qmc_n_kept, qmc_done=qmc_done)
+
+    if partial_path.exists():
+        p = np.load(partial_path)
+        if "n_ok" in p.files:
+            n_ok = int(p["n_ok"])
+            mc_l2[:], mc_h1[:], mc_n_kept[:] = p["mc_l2"], p["mc_h1"], p["mc_n_kept"]
+            mc_seeds_used[:] = p["mc_seeds_used"]
+            next_seed = int(p["next_seed"])
+            failed_seeds = [int(s) for s in p["failed_seeds"]]
+            qmc_l2[:], qmc_h1[:] = p["qmc_l2"], p["qmc_h1"]
+            qmc_n_kept[:] = p["qmc_n_kept"]
+            qmc_done[:] = p["qmc_done"]
+        print("Resuming from", partial_path)
+        print("  successful MC trials:", n_ok, "/", n_trials, "seeds:", list(mc_seeds_used[:n_ok]))
+        print("  failed seeds:", failed_seeds, "next_seed:", next_seed)
+        print("  QMC done:", int(qmc_done.sum()), "/", qmc_done.size)
+    print("=" * 72)
+    print("Experiment 1: Monte Carlo sphere sampling, multiple seeds")
+    print("=" * 72)
+    seed = next_seed
+    while n_ok < n_trials:
+        if seed > max_seed:
+            raise RuntimeError("Could not complete {} MC trials before seed {}".format(n_trials, max_seed))
+        if seed in failed_seeds or seed in list(mc_seeds_used[:n_ok]):
+            seed += 1
+            continue
+        print(f"\n--- MC trial {n_ok + 1}/{n_trials}, seed={seed} ---", flush=True)
+        set_seed(seed)
+        trial_l2 = np.zeros(n_sizes)
+        trial_h1 = np.zeros(n_sizes)
+        trial_kept = np.zeros(n_sizes)
+        try:
+            for j, neuron_num in enumerate(neuron_num_list):
+                print(f"  n={neuron_num}", flush=True)
+                n_kept, errl2, errh1 = fit_one_model(
+                    neuron_num, relu_k, dim, initialize_model_2,
+                    integration_weights, integration_points, on_singular="raise")
+                trial_kept[j] = n_kept
+                trial_l2[j] = errl2
+                trial_h1[j] = errh1
+                print(f"  kept={n_kept}  L2={errl2:.6e}  H1={errh1:.6e}", flush=True)
+        except RuntimeError as e:
+            print(f"  seed={seed} FAILED ({e}); skipping this seed", flush=True)
+            failed_seeds.append(seed)
+            next_seed = seed + 1
+            dump_partial()
+            seed += 1
+            continue
+        mc_l2[n_ok] = trial_l2
+        mc_h1[n_ok] = trial_h1
+        mc_n_kept[n_ok] = trial_kept
+        mc_seeds_used[n_ok] = seed
+        n_ok += 1
+        next_seed = seed + 1
+        dump_partial()
+        print(f"  trial complete ({n_ok}/{n_trials})", flush=True)
+        seed += 1
+
+    mc_seeds = [int(s) for s in mc_seeds_used[:n_trials]]
+    print("\nSuccessful MC seeds:", mc_seeds)
+    print("Skipped seeds:", failed_seeds)
+    mc_l2_mean = mc_l2.mean(axis=0)
+    mc_l2_std = mc_l2.std(axis=0, ddof=1)
+    mc_h1_mean = mc_h1.mean(axis=0)
+    mc_h1_std = mc_h1.std(axis=0, ddof=1)
+    mc_n_kept_mean = mc_n_kept.mean(axis=0)
+    mc_n_kept_std = mc_n_kept.std(axis=0, ddof=1)
+
+    print("\nPer-trial actual (kept) neuron counts:")
+    print(mc_n_kept)
+    print("MC actual n mean ± std:", list(zip(mc_n_kept_mean, mc_n_kept_std)))
+    print("\nMC mean L2 / H1 vs actual n (mean kept neurons, like actual_neuron_list):")
+    output_convergence_order(list(mc_n_kept_mean), list(mc_l2_mean), list(mc_h1_mean))
+
+    print("=" * 72)
+    print("Experiment 2: QMC Sobol sphere sampling (deterministic, n=2^k)")
+    print("=" * 72)
+    for j, neuron_num in enumerate(neuron_num_list):
+        print(f"\n--- QMC n={neuron_num} ---", flush=True)
+        if qmc_done[j]:
+            print(f"  skip (cached) kept={int(qmc_n_kept[j])}  L2={qmc_l2[j]:.6e}  H1={qmc_h1[j]:.6e}",
+                  flush=True)
+            continue
+        n_kept, errl2, errh1 = fit_one_model(
+            neuron_num, relu_k, dim, initialize_model_2_qmc,
+            integration_weights, integration_points, on_singular="lstsq")
+        qmc_n_kept[j] = n_kept
+        qmc_l2[j] = errl2
+        qmc_h1[j] = errh1
+        qmc_done[j] = True
+        dump_partial()
+        print(f"  kept={n_kept}  L2={errl2:.6e}  H1={errh1:.6e}", flush=True)
+    print("\nQMC L2 / H1 vs actual n (kept neurons):")
+    output_convergence_order(list(qmc_n_kept), list(qmc_l2), list(qmc_h1))
+
+    print("=" * 72)
+    print("Comparison: MC mean ± std (ddof=1) vs QMC")
+    print("Errors averaged at the same requested n=2^k; orders use actual kept n.")
+    print("=" * 72)
+    table = format_compare_table(
+        neuron_num_list, mc_l2_mean, mc_l2_std, mc_h1_mean, mc_h1_std,
+        qmc_l2, qmc_h1, mc_n_kept_mean, mc_n_kept_std, qmc_n_kept)
+    print(table)
+
+    out_dir = Path("results_relu_qmc_compare")
+    out_dir.mkdir(exist_ok=True)
+    npz_path = out_dir / "mqc_compare_trials_5d.npz"
+    txt_path = out_dir / "mqc_compare_trials_5d.txt"
+    np.savez(
+        npz_path,
+        neuron_num_list=np.array(neuron_num_list),
+        mc_seeds=np.array(mc_seeds),
+        failed_seeds=np.array(failed_seeds, dtype=int),
+        mc_l2=mc_l2,
+        mc_h1=mc_h1,
+        mc_n_kept=mc_n_kept,
+        mc_n_kept_mean=mc_n_kept_mean,
+        mc_n_kept_std=mc_n_kept_std,
+        mc_l2_mean=mc_l2_mean,
+        mc_l2_std=mc_l2_std,
+        mc_h1_mean=mc_h1_mean,
+        mc_h1_std=mc_h1_std,
+        qmc_l2=qmc_l2,
+        qmc_h1=qmc_h1,
+        qmc_n_kept=qmc_n_kept,
+    )
+    with open(txt_path, "w") as f:
+        f.write("dim: 5\n")
+        f.write("MC seeds: " + str(mc_seeds) + "\n")
+        f.write("Skipped seeds: " + str(failed_seeds) + "\n")
+        f.write("n_requested: " + str(neuron_num_list) + "\n")
+        f.write("Per-trial MC actual n (kept):\n" + np.array2string(mc_n_kept) + "\n\n")
+        f.write("QMC actual n (kept): " + np.array2string(qmc_n_kept) + "\n\n")
+        f.write("Per-trial MC L2:\n" + np.array2string(mc_l2, precision=6) + "\n\n")
+        f.write("Per-trial MC H1:\n" + np.array2string(mc_h1, precision=6) + "\n\n")
+        f.write(table + "\n")
+    print(f"\nSaved {npz_path} and {txt_path}")
